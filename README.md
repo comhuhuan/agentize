@@ -25,6 +25,8 @@ For more details of the variables and options available, refer to our
   - Plan is put on Github Issues for tracking.
 2. Build [skills](https://agentskills.io/), do not build agents.
   - Skills are modular reusable, formal, and lightweighted flow definitions.
+3. Bootstrapping via self-improvment: We have `.claude` linked to our `claude` rules
+   directory. We use these rules to develop these rules further.
 
 ## Project Organization
 
@@ -32,6 +34,7 @@ For more details of the variables and options available, refer to our
 agentize/
 ├── docs/                   # Document, currently we only have option usage
 ├── templates/              # Templates for SDK generation
+├── claude/                 # Core agent rules for Claude Code
 ├── tests/                  # Test cases
 ├── .gitignore              # Git ignore file
 ├── Makefile                # Makefile for creating SDKs
