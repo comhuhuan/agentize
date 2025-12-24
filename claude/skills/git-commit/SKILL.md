@@ -6,9 +6,21 @@ description: Commit the staged changes to git with meaningful messages.
 # Git Commit
 
 This skill instructs AI agent on how to commit staged changes to a git repository with
-meaningful commit messages. The commit message should clearly describe the changes made.
-If the changes are less than 20 lines, a short commit message is sufficient.
-Otherwise, a full commit message is required.
+meaningful commit messages.
+
+## Inputs
+
+The commit skill takes the following inputs:
+- The purpose of the commit, either a delivery or a milestone
+  - Milestone is the only commit that can bypass pre-commit hooks
+  - Milestone can only happen on a development branch
+- The staged files to be committed
+  - The commit message should clearly describe the changes made.
+    If the changes are less than 20 lines, a short commit message is sufficient.
+    Otherwise, a full commit message is required.
+- If available, the related milestone or issue number
+  - As per our naming convention, the development branch should be named
+    `issue-<number>-<brief-title>`, so you can find the issue number from the branch name.
 
 ## Full Commit Message
 
@@ -25,6 +37,14 @@ If needed, provide addtional context and explanations about the changes made in 
 It is preferred to mention the related Github issue if applicable.
 ```
 
+A milestone commit is always on a development branch associated with a issue.
+If it is a milestone, additionally add the following information:
+1. Add `[milestone]` before the tag.
+2. Mention the issue number after the brief summary, e.g., `A milestone to issue #42`.
+3. Briefly summarize the test case status, e.g. `35/42 test cases passed`.
+   - Milestone is to react to a big issue breaking down to smaller steps.
+   - Thus, it is important to tract the progress, and is the only case allowing bypassing pre-commit hooks.
+
 ## Short Commit Message
 
 The commit message should follow the structure below:
@@ -32,6 +52,8 @@ The commit message should follow the structure below:
 ```plaintext
 [tag]: A brief summary of the changes of this commit.
 ```
+
+A short message is always for a delivery commit.
 
 ## Tags
 
@@ -59,9 +81,8 @@ in the message. It is the user who is **FULLY** responsible for the commit.
 
 ## Pre-commit Check
 
-When **committing** the changes, the AI agent **MUST** ensure that `--no-verify` is
-**NOT** used to bypass any pre-commit hooks. This ensures the correctness and quality
-of the code being committed.
-
-<---! TODO: Later we should partially allow `--no-verify` bypassing under "milestones" --->
-<---! Have milestones implemented later --->
+When **committing** the changes, this skill should faithfully follow
+the input on if it is a milestone to use `--no-verify` or not.
+If it is a milestone, the commit **MAY** bypass pre-commit hooks.
+If it is a delivery commit, the commit **MUST NOT** bypass pre-commit hooks!
+**DO NOT** use pre-existing issue as an excuse to bypass pre-commit in any case!
