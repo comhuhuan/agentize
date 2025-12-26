@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "WebSearch",
+
       "Bash(echo FILE OPERATIONS - Reading and viewing files)",
       "Read(//tmp/**)",
       "Bash(cat:*)",
@@ -33,6 +35,7 @@
       "Skill(open-pr)",
       "Skill(open-issue)",
       "Skill(fork-dev-branch)",
+      "Skill(external-consensus)",
 
       "Bash(echo GIT READ OPERATIONS - Non-destructive git commands)",
       "Bash(git status:*)",
