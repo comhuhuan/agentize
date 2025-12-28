@@ -18,3 +18,6 @@
 - Focus on the rationale of the design itself. DO NOT mention any incremental changes of a history design!
   - **DO NOT**: this design reduces 30% LoC compared to previous design.
   - **DO**: this design simplifies the architecture by providing a unified interface across the modules.
+- This project is still at its early stage.
+  - Feel free to make breaking changes to the design.
+  - Do not over-worry about backward compatibility.
