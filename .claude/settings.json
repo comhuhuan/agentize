@@ -3,7 +3,18 @@
     "allow": [
       "WebSearch",
       "WebFetch",
-      "Write(./.tmp/**)",
+      "Write(.tmp/**)",
+      "Edit(.tmp/**)",
+      "Bash(chmod +x:*)",
+
+      "Bash(echo SKILL - Agent skills)",
+      "Skill(open-pr)",
+      "Skill(open-issue)",
+      "Skill(fork-dev-branch)",
+      "Skill(commit-msg)",
+      "Skill(review-standard)",
+      "Skill(external-consensus)",
+      "Bash(.claude/skills/external-consensus/scripts/external-consensus.sh:*)",
 
       "Bash(echo FILE OPERATIONS - Reading and viewing files)",
       "Read(//tmp/**)",
@@ -35,17 +46,6 @@
 
       "Bash(echo ENVIRONMENT - Module system and runtime)",
       "Bash(module load:*)",
-
-      "Bash(echo SKILL - Agent skills)",
-      "Skill(open-pr)",
-      "Skill(open-issue)",
-      "Skill(fork-dev-branch)",
-      "Skill(commit-msg)",
-      "Skill(review-standard)",
-
-      "Bash(echo Review plans using a external consensus source)",
-      "Skill(external-consensus)",
-      "Bash(.claude/skills/external-consensus/scripts/external-consensus.sh:*)",
 
       "Bash(echo GIT READ OPERATIONS - Non-destructive git commands)",
       "Bash(git status:*)",

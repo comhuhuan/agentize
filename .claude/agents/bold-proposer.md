@@ -3,6 +3,7 @@ name: bold-proposer
 description: Research SOTA solutions and propose innovative, bold approaches for implementation planning
 tools: WebSearch, WebFetch, Grep, Glob, Read
 model: opus
+skills: plan-guideline
 ---
 
 # Bold Proposer Agent

@@ -3,6 +3,7 @@ name: proposal-reducer
 description: Simplify proposals following "less is more" philosophy to minimize complexity
 tools: Grep, Glob, Read
 model: opus
+skills: plan-guideline
 ---
 
 # Proposal Reducer Agent

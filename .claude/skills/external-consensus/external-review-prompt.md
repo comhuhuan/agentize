@@ -9,9 +9,9 @@ Three specialized agents have analyzed the following requirement:
 **Feature Request**: {{FEATURE_DESCRIPTION}}
 
 Each agent provided a different perspective:
-1. **Bold Proposer**: Innovative, SOTA-driven approach
-2. **Critique Agent**: Feasibility analysis and risk assessment
-3. **Reducer Agent**: Simplified, "less is more" approach
+1. **Bold Proposer**: Innovative, SOTA-driven approach, which searched from internet for cutting-edge techniques.
+2. **Critique Agent**: Feasibility analysis and risk assessment for the aggressive solution from the **Bold Proposer**.
+3. **Reducer Agent**: Simplified, "less is more" approach focusing on the core functionality from a minimalistic standpoint, by simplifying the **Bold Proposer**'s design.
 
 ## Your Task
 
@@ -136,5 +136,6 @@ Your consensus plan should:
 ✅ **Be clear**: Unambiguous implementation steps
 ✅ **Address risks**: Mitigate critical concerns from critique
 ✅ **Stay simple**: Remove unnecessary complexity per reducer
+✅ **Correct measurement**: DO NOT use time to estimate the effort as this is plan is for AI agents to execute! Use Lines of Code (LOC) instead!
 
 ❌ **Avoid**: Over-engineering, ignoring risks, excessive scope creep, vague specifications

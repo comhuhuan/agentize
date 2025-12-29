@@ -8,9 +8,16 @@ ultrathink
 
 # Ultra Planner Command
 
-**IMPORTANT**: This is a **planning tool only**. It takes a feature description as input and produces a consensus implementation plan as output. It does NOT make any code changes or implement features.
+**IMPORTANT**: This is a **planning tool only**. It takes a feature description as input and produces
+a consensus implementation plan as output. It does NOT make any code changes or implement features.
 
-Create implementation plans through multi-agent debate, combining innovation, critical analysis, and simplification into a balanced consensus plan.
+**IMPORTANT**: No matter how simple you think the request is, always strictly follow the multi-agent
+debase workflow below to do a thorough analysis of the request throughout the whole code base.
+Sometimes what seems simple at first may have hidden complexities or breaking changes that
+need to be uncovered via a debate.
+
+Create implementation plans through multi-agent debate, combining innovation, critical analysis,
+and simplification into a balanced consensus plan.
 
 Invoke the command: `/ultra-planner [feature-description]` or `/ultra-planner --refine [plan-file]`
 

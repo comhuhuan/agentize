@@ -3,6 +3,7 @@ name: proposal-critique
 description: Validate assumptions and analyze technical feasibility of implementation proposals
 tools: Grep, Glob, Read, Bash
 model: opus
+skills: plan-guideline
 ---
 
 # Proposal Critique Agent
