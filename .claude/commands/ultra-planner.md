@@ -209,7 +209,9 @@ Identify unnecessary complexity and propose simpler alternatives."
 
 ### Step 5: Combine Agent Reports
 
-After all three agents complete, combine their outputs into a single debate report using echo-based construction:
+After all three agents complete, **DO NOT** even try to read their outputs!
+Use `cat` and `heredoc` to combine their outputs into a single debate report
+as below:
 
 **Generate combined report:**
 ```bash
