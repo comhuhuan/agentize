@@ -50,6 +50,9 @@ grep -r "pattern_name" --include="*.md" --include="*.sh"
 # Check for conflicts
 grep -r "similar_feature" --include="*.md"
 
+# Check docs/ for current command interfaces
+grep -r "relevant_command" docs/
+
 # Understand constraints
 cat CLAUDE.md README.md
 ```
@@ -59,6 +62,7 @@ Read relevant files to verify:
 - File locations follow conventions
 - Dependencies are acceptable
 - No naming conflicts exist
+- **Search `docs/` for current commands and interfaces; cite specific files checked**
 
 ### Step 3: Challenge Assumptions
 
@@ -109,6 +113,12 @@ Your critique should be structured as:
 ## Executive Summary
 
 [2-3 sentence assessment of the proposal's overall feasibility]
+
+## Files Checked
+
+**Documentation and codebase verification:**
+- [File path 1]: [What was verified]
+- [File path 2]: [What was verified]
 
 ## Assumption Validation
 
