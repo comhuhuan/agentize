@@ -130,14 +130,16 @@ cmd_create() {
 
     echo "Updating $main_branch branch..."
 
+    local main_repo_dir="$repo_root"/trees/main
+
     # Checkout main branch in main repo
-    git -C "$repo_root" checkout "$main_branch" || {
+    git -C  $main_repo_dir checkout "$main_branch" || {
         echo -e "${RED}Error: Failed to checkout $main_branch${NC}"
         return 1
     }
 
     # Pull latest changes from origin with rebase
-    git -C "$repo_root" pull origin "$main_branch" --rebase || {
+    git -C $main_repo_dir pull origin "$main_branch" --rebase || {
         echo -e "${YELLOW}Warning: Failed to pull from origin/$main_branch${NC}"
         echo "Continuing with local $main_branch..."
     }
@@ -146,19 +148,13 @@ cmd_create() {
     echo "Branch: $branch_name (forked from $main_branch)"
 
     # Create worktree from main branch using git -C to operate on main repo
-    git -C "$repo_root" worktree add -b "$branch_name" "$worktree_path" "$main_branch"
-
-    # Bootstrap CLAUDE.md if it exists in main repo
-    if [ -f "$repo_root/CLAUDE.md" ]; then
-        cp "$repo_root/CLAUDE.md" "$worktree_path/CLAUDE.md"
-        echo "Bootstrapped CLAUDE.md"
-    fi
+    git -C $main_repo_dir worktree add -b "$branch_name" "$worktree_path" "$main_branch"
 
     echo -e "${GREEN}✓ Worktree created successfully${NC}"
     echo ""
-    echo "To start working:"
-    echo "  cd $worktree_path"
-    echo "  claude-code"
+
+    cd $worktree_path
+    claude
 }
 
 # List worktrees
