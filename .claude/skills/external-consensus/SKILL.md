@@ -92,22 +92,6 @@ CONSENSUS_PLAN=$(cat "$OUTPUT_FILE")
 - Read-only tools ensure security
 - Seamless fallback when Codex unavailable
 
-### Cost and Timing Considerations
-
-**Codex (gpt-5.2-codex with xhigh reasoning):**
-- Cost: ~$0.50-1.50 per consensus review (varies with debate report size)
-- Time: 2-5 minutes (xhigh reasoning takes longer but produces better results)
-
-**Claude Opus (fallback):**
-- Cost: ~$1.00-3.00 per consensus review
-- Time: 1-3 minutes
-
-The increased cost and time from high reasoning effort and web search are justified by:
-- More thorough analysis of trade-offs between agent perspectives
-- Fact-checked technical decisions
-- Research-backed implementation recommendations
-- Higher quality consensus plans
-
 ## Skill Philosophy
 
 After three agents debate a feature from different perspectives, an **external, neutral reviewer** synthesizes the final plan:
@@ -166,8 +150,8 @@ Direct invocation - the script handles everything and outputs summary:
 4. Checks if Codex is available (prefers Codex with xhigh reasoning)
 5. Falls back to Claude Opus if Codex unavailable
 6. Invokes external AI with appropriate configuration:
-   - **Codex**: `gpt-5.2-codex`, read-only sandbox, web search enabled, xhigh reasoning (2-5 min)
-   - **Claude**: Opus model, read-only tools, bypassPermissions (1-3 min)
+   - **Codex**: `gpt-5.2-codex`, read-only sandbox, web search enabled, xhigh reasoning (30 min)
+   - **Claude**: Opus model, read-only tools, bypassPermissions (30 min)
 7. Saves consensus plan to `.tmp/consensus-plan-{timestamp}.md`
 8. Validates output and extracts summary information
 9. Outputs consensus file path on stdout (last line)
@@ -230,8 +214,6 @@ Configuration:
 - Sandbox: read-only
 - Web search: enabled
 - Reasoning effort: xhigh
-
-This will take 2-5 minutes with xhigh reasoning effort...
 
 [Codex execution details...]
 
@@ -402,29 +384,3 @@ External consensus review complete!
 Note: Used Claude Opus (Codex unavailable)
 Research capability: WebSearch and WebFetch used for fact-checking
 ```
-
-## Integration Points
-
-This skill is designed to be invoked by:
-- **ultra-planner command**: After debate-based-planning skill completes
-
-This skill outputs to:
-- **open-issue skill**: Consensus plan becomes GitHub issue body
-- **User approval**: Plan presented for user review before issue creation
-
-## Notes
-
-- External reviewer is **required** for consensus (not optional)
-- Codex with `gpt-5.2-codex` is **preferred** for advanced features (web search, xhigh reasoning)
-- Claude Opus is **fallback** with same research capabilities
-- Manual review is **last resort** if tools unavailable
-- Prompt template is **customizable** in `./external-review-prompt.md` (in skill folder)
-- Consensus plan format follows **standard implementation plan structure**
-- **File-based I/O** pattern: Uses `.tmp/` directory with timestamps for input/output
-- **Execution time**: 2-5 minutes with Codex (xhigh reasoning), 1-3 minutes with Claude
-- **Cost**: Higher with advanced features but justified by quality:
-  - Codex gpt-5.2-codex: ~$0.50-1.50 per review
-  - Claude Opus: ~$1.00-3.00 per review
-- **Security**: Read-only sandbox/tools ensure no file modifications
-- **Research capability**: Web search enables fact-checking and SOTA pattern research
-- **Reasoning quality**: xhigh effort produces more thorough trade-off analysis
