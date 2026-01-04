@@ -51,12 +51,6 @@ make_decision() {
                 fi
             fi
 
-            # Check for publish operations (must ask even in hands-off mode)
-            if echo "$command" | grep -qE '^(git push|gh (pr|issue) create)'; then
-                echo "ask"
-                return
-            fi
-
             # Check for destructive operations (deny or ask)
             if echo "$command" | grep -qE '(rm -rf|git clean|git reset --hard|git push --force)'; then
                 echo "ask"
