@@ -81,7 +81,7 @@ should_skip_test() {
     # Hook tests only run in bash (Claude Code invokes hooks with bash only)
     if [ "$shell" = "zsh" ]; then
         case "$test_name" in
-            test-hook-*|test-milestone-resume-hint|test-refine-issue-extract-plan|test-worktree-env-override-title-length)
+            test-hook-*|test-milestone-resume-hint|test-worktree-env-override-title-length)
                 return 0  # Should skip
                 ;;
         esac

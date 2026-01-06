@@ -1,7 +1,7 @@
 ---
 name: ultra-planner
 description: Multi-agent debate-based planning with /ultra-planner command
-argument-hint: [feature-description] or --refine [plan-file]
+argument-hint: [feature-description] or --refine [issue-no] [refine-comments]
 ---
 
 ultrathink
@@ -9,6 +9,11 @@ ultrathink
 # Ultra Planner Command
 
 **IMPORTANT**: Keep a correct mindset when this command is invoked.
+
+0. This workflow is intended to be as hands-off as possible, do your best
+  - NOT TO STOP until the plan is finalized
+  - NOT TO ask user for design decisions. Choose the one you think the most reasonable.
+    If it is bad plan, user will feed it later.
 
 1. This is a **planning tool only**. It takes a feature description as input and produces
 a consensus implementation plan as output. It does NOT make any code changes or implement features.
@@ -26,11 +31,7 @@ need to be uncovered via a debate and thorough codebase analysis.
 Create implementation plans through multi-agent debate, combining innovation, critical analysis,
 and simplification into a balanced consensus plan.
 
-Invoke the command: `/ultra-planner [feature-description]` or `/ultra-planner --refine [plan-file]`
-
-If arguments are provided via $ARGUMENTS, parse them as either:
-- Feature description (default mode)
-- `--refine <plan-file>` (refinement mode)
+Invoke the command: `/ultra-planner [feature-description]` or `/ultra-planner --refine [issue-no] [refine-comments]`
 
 ## What This Command Does
 
@@ -47,17 +48,18 @@ This command orchestrates a three-agent debate system to generate high-quality i
 
 **From arguments ($ARGUMENTS):**
 
+- To avoid expanding ARGUMENTS multiple times, later we will use `{FEATURE_DESC}` to refer to it.
+
 **Default mode:**
 ```
 /ultra-planner Add user authentication with JWT tokens and role-based access control
 ```
-- `$ARGUMENTS` = full feature description (what to plan, not what to implement)
 
 **Refinement mode:**
+
 ```
-/ultra-planner --refine .tmp/issue-42-consensus.md
+/ultra-planner --refine <issue-no> <description>
 ```
-- `$ARGUMENTS` = `--refine <plan-file>`
 - Refines an existing plan by running it through the debate system again
 
 **From conversation context:**
@@ -69,8 +71,13 @@ This command orchestrates a three-agent debate system to generate high-quality i
 **This command produces planning documents only. No code changes are made.**
 
 **Files created:**
-- `.tmp/issue-{N}-debate.md` - Combined three-agent report
-- `.tmp/issue-{N}-consensus.md` - Final balanced plan
+- `.tmp/issue-[refine-]{N}-bold.md` - Bold proposer agent report
+- `.tmp/issue-[refine-]{N}-critique.md` - Critique agent report
+- `.tmp/issue-[refine-]{N}-reducer.md` - Reducer agent report
+- `.tmp/issue-[refine-]{N}-debate.md` - Combined three-agent report
+- `.tmp/issue-[refine-]{N}-consensus.md` - Final balanced plan
+
+`[refine-]` is optional for refine mode.
 
 **GitHub issue:**
 - Created via open-issue skill if user approves
@@ -84,40 +91,14 @@ This command orchestrates a three-agent debate system to generate high-quality i
 
 ### Step 1: Parse Arguments and Extract Feature Description
 
-**IMPORTANT**: Parse $ARGUMENTS ONCE at the beginning and store in variables.
+Accept the $ARGUMENTS.
 
-**Check for refinement mode:**
+If we have `--refine` at the beginning, the next number is the issue number to be refined,
+and the rest are issue refine comments.
+You should fetch the issue to incoperate the users comments.
 ```bash
-if echo "$ARGUMENTS" | grep -q "^--refine"; then
-    MODE="refine"
-    PLAN_FILE_PATH=$(echo "$ARGUMENTS" | sed 's/--refine //')
-    # Load plan content into FEATURE_DESC
-    if [ -f "$PLAN_FILE_PATH" ]; then
-        FEATURE_DESC=$(cat "$PLAN_FILE_PATH")
-    else
-        echo "Error: Plan file not found: $PLAN_FILE_PATH"
-        exit 1
-    fi
-else
-    MODE="default"
-    FEATURE_DESC="$ARGUMENTS"
-fi
+git issue view <issue-no>
 ```
-
-**Store these variables for the entire workflow:**
-- `MODE`: Either "default" or "refine"
-- `FEATURE_DESC`: The feature description (in default mode) or loaded from file (in refine mode)
-- `PLAN_FILE_PATH`: Path to existing plan file (only in refine mode)
-
-**Default mode:**
-- Use `FEATURE_DESC` from $ARGUMENTS
-- If empty, extract from conversation context
-
-**Refinement mode:**
-- Plan file content loaded into `FEATURE_DESC`
-- File existence validated above
-
-**DO NOT reference $ARGUMENTS again after this step.** Use `FEATURE_DESC` instead.
 
 ### Step 2: Validate Feature Description
 
@@ -316,7 +297,7 @@ Plan issue #${ISSUE_NUMBER} updated with consensus plan.
 Title: [plan][tag] {feature name}
 URL: {issue_url}
 
-To refine: /refine-issue ${ISSUE_NUMBER}
+To refine: /ultra-planner --refine ${ISSUE_NUMBER}
 To implement: /issue-to-impl ${ISSUE_NUMBER}
 ```
 
@@ -367,20 +348,18 @@ External consensus review...
 Consensus: JWT + basic roles (~280 LOC, Medium)
 
 Draft GitHub issue created: #42
-Title: [draft][plan][feat] Add user authentication
+Title: [plan][feat] Add user authentication
 URL: https://github.com/user/repo/issues/42
 
-To refine: /refine-issue 42
-To implement: Remove [draft] on GitHub, then /issue-to-impl 42
+To refine: /ultra-planner --refine 42
+To implement: /issue-to-impl 42
 ```
 
-### Example 2: Plan Refinement (Using /refine-issue)
-
-**Note:** Plan refinement is now handled by the `/refine-issue` command, not `--refine` mode.
+### Example 2: Plan Refinement
 
 **Input:**
 ```
-/refine-issue 42
+/ultra-planner --refine 42
 ```
 
 **Output:**

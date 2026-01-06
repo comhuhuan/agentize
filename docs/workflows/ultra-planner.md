@@ -20,7 +20,7 @@ graph TD
     F[Combined 3-perspective report] --> G
     G[External consensus: Synthesize plan] --> H[Update issue with consensus plan]
     H --> I{User reviews plan}
-    I -->|Refine| J["/refine-issue command"]
+    I -->|Refine| J["/ultra-planner --refine"]
     J --> C
     I -->|Implement| K["/issue-to-impl for implementation"]
     I -->|Abandon| Z(Close issue)
@@ -62,22 +62,22 @@ Running multi-agent debate...
 
 Issue #42 updated with consensus plan.
 
-To refine: /refine-issue 42
+To refine: /ultra-planner --refine 42
 To implement: /issue-to-impl 42
 ```
 
 ### 2. Issue-Based Refinement
 
-The `/refine-issue` command enables iterative plan improvement:
+Refinement mode (`/ultra-planner --refine`) enables iterative plan improvement:
 
 - **Fetches issue body** - pulls current plan from GitHub
-- **Runs full debate** - same three-agent workflow as ultra-planner
+- **Runs full debate** - same three-agent workflow as initial planning
 - **Accepts refinement focus** - optional inline instructions guide the agents
 - **Updates issue atomically** - replaces body only after consensus completes
 
 **Example (General refinement):**
 ```
-/refine-issue 42
+/ultra-planner --refine 42
 
 Fetching issue #42...
 Running debate on current plan...
@@ -90,7 +90,7 @@ Summary: Reduced LOC 280→250, improved security
 
 **Example (Directed refinement):**
 ```
-/refine-issue 42 Focus on reducing complexity
+/ultra-planner --refine 42 Focus on reducing complexity
 
 Fetching issue #42...
 Refinement focus: Focus on reducing complexity
@@ -131,7 +131,7 @@ The `/doc-architect` skill can generate this checklist format for any feature, e
 After reviewing a plan issue:
 
 - **Review on GitHub** - examine the plan details in the issue body
-- **Refine if needed** - use `/refine-issue` for improvements
+- **Refine if needed** - use `/ultra-planner --refine` for improvements
 - **Implement when ready** - use `/issue-to-impl` to start implementation
 - **Flexible timing** - implement when ready, no time pressure
 
@@ -149,7 +149,7 @@ After reviewing a plan issue:
 
 **Cost:** ~$2-5 per planning session (3 Opus agents + 1 external review)
 
-### Refine-Issue Run
+### Refinement Run (--refine mode)
 
 **Duration:** 5-10 minutes end-to-end (same as initial run)
 
@@ -164,7 +164,7 @@ After reviewing a plan issue:
 1. **Plan Issue** - `[plan][tag]: Title`
    - Created automatically by ultra-planner
    - Visible to all stakeholders
-   - Can be refined via `/refine-issue`
+   - Can be refined via `/ultra-planner --refine`
    - Can be implemented via `/issue-to-impl`
 
 2. **Closed/Abandoned** - Issue closed on GitHub
@@ -185,15 +185,15 @@ Creates initial plan via multi-agent debate and auto-creates plan issue.
 
 **Output:** Plan issue URL and refinement/implementation instructions
 
-### `/refine-issue <issue-number> [refinement-instructions]`
+### `/ultra-planner --refine <issue-number> [refinement-instructions]`
 
 Refines existing plan issue via multi-agent debate and updates issue body.
 
 **Usage:**
 ```
-/refine-issue 42
-/refine-issue 42 Focus on reducing complexity
-/refine-issue 42 Add more error handling and edge cases
+/ultra-planner --refine 42
+/ultra-planner --refine 42 Focus on reducing complexity
+/ultra-planner --refine 42 Add more error handling and edge cases
 ```
 
 **Output:** Updated issue URL and summary of changes
@@ -211,14 +211,14 @@ Implements plan issue.
 
 ## Comparison to Previous Workflow
 
-| Aspect | Previous | Issue-Based |
+| Aspect | Previous (v1) | Current (v2) |
 |--------|----------|-------------|
-| **Issue creation** | After user approval | Automatic after consensus |
-| **Approval step** | CLI prompt | Direct implementation |
-| **Refinement** | CLI flag `--refine` | Issue-based `/refine-issue` |
+| **Issue creation** | After user approval | Automatic placeholder first |
+| **Approval step** | CLI prompt before issue | Review after issue creation |
+| **Refinement** | No refinement support | `--refine` mode for iteration |
 | **Collaboration** | Plan files in `.tmp` | GitHub issues from start |
 | **Visibility** | Private until approved | Public issues immediately |
 | **Workflow** | Approval → Issue → Impl | Issue → Refine* → Impl |
 
-*Refinement is optional and can be done multiple times
+*Refinement is optional and can be done multiple times using `--refine`
 

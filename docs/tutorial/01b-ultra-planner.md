@@ -63,23 +63,23 @@ Documentation Planning:
 Plan issue #42 updated with consensus plan.
 URL: https://github.com/user/repo/issues/42
 
-To refine: /refine-issue 42
+To refine: /ultra-planner --refine 42
 To implement: /issue-to-impl 42
 ```
 
-## Refinement with `/refine-issue`
+## Refinement with `--refine` Mode
 
 Improve an existing plan issue by running the debate again:
 
 ```
-/refine-issue 42
+/ultra-planner --refine 42
 ```
 
 The agents analyze the current plan and propose improvements. Useful when the initial consensus feels over-complicated or you want to explore simpler alternatives.
 
 **Optional refinement focus:**
 ```
-/refine-issue 42 Focus on reducing complexity
+/ultra-planner --refine 42 Focus on reducing complexity
 ```
 
 ## Tips
