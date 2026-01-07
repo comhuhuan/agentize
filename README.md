@@ -20,25 +20,20 @@ See [docs/cli/install.md](./docs/cli/install.md) for installation options and tr
 
 If you prefer manual setup:
 
-1. Clone this repository as a bare repo:
 ```bash
-git clone --bare https://github.com/SyntheSys-Lab/agentize.git agentize.git
-```
+# Clone the repository
+git clone https://github.com/SyntheSys-Lab/agentize.git ~/.agentize
 
-2. Initialize worktree environment:
-```bash
-cd agentize.git
-./scripts/wt-cli.sh init
-cd trees/main
-```
-
-3. Set up shell functions:
-```bash
+# Run setup
+cd ~/.agentize
 make setup
-source setup.sh
 ```
 
-Add `source /path/to/agentize.git/trees/main/setup.sh` to your shell RC file for persistence.
+Then add to your shell RC file (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```bash
+source $HOME/.agentize/setup.sh
+```
 
 ### Initialize a New Project
 
