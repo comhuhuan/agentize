@@ -118,12 +118,8 @@
       "Bash(test:*)",
 
       "Bash(echo GITHUB WRITE OPERATIONS - Creating/modifying GitHub resources)",
-      "Bash(gh project field-create:*)",
-      "Bash(gh project item-add:*)",
       "Bash(gh api:*)",
-      "Bash(gh issue create:*)",
-      "Bash(gh project item-edit:*)",
-      "Bash(gh pr create:*)"
+      "Bash(gh project item-edit:*)"
     ]
   },
   "hooks": {
@@ -153,6 +149,17 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-tool-use.py"
           }
         ]
       }
