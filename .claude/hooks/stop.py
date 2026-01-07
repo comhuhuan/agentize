@@ -53,10 +53,13 @@ The ultimate goal of this workflow is to deliver a PR on GitHut that implements 
 2. If you have every coding task done, go to /code-review step.
 3. If code review is concerning, fix the code review comments and repeat /code-review step.
 4. If code review is good, open the PR!
-5. If the PR is successfully created, please tell me "Yes! I am done!"
+5. If you are gonna open the PR, look at `CLAUDE.md` to run the full test suite locally before opening the PR.
+   - If it is failing fix the issues before opening the PR.
+   - If it is passing, proceed to open the PR.
+6. After preparing the PR description, do not ask "Should I open the PR?" Just open it right away.
+7. If the PR is successfully created, please tell me "Yes! I am done!"
   - Set `{fname}` continuation count to {max_continuations} to stop further continuations.
-3. If you are stuck, and does not know what to do next. Please post a comment on GitHub Issue asking for help.
-6. If you are stuck, and does not know what to do next. Please post a comment on GitHub Issue asking for help.
+8. If you are stuck, and does not know what to do next. Please post a comment on GitHub Issue asking for help.
   - First, set `{fname}` continuation count to {max_continuations} to stop further continuations.
   - This comment shall include:
     - What you have done so far
