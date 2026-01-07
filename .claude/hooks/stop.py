@@ -13,6 +13,19 @@ def main():
 
     hook_input = json.load(sys.stdin)
     session_id = hook_input.get("session_id", "")
+    transcript_path = hook_input.get("transcript_path", "")
+    transript = open(transcript_path, 'r').readlines()[-1]
+
+    # Check for Insufficient Credit error
+    try:
+        last_entry = json.loads(transript)
+        if last_entry.get('isApiErrorMessage') and 'Insufficient credit' in str(last_entry.get('message', {}).get('content', [])):
+            logger(session_id, "Insufficient credits detected, stopping auto-continuation")
+            sys.exit(0)
+    except (json.JSONDecodeError, Exception) as e:
+        # If we can't parse the last entry, continue with normal flow
+        logger(session_id, f"Could not parse last transcript entry: {e}")
+
 
     # Check the file existence
     fname = f'.tmp/hooked-sessions/{session_id}.json'
