@@ -31,3 +31,34 @@ CLI documentation is referenced from:
 - Main [README.md](../README.md) under "CLI Reference"
 - Tutorial series in [docs/tutorial/](../tutorial/)
 - Skills and commands that invoke these CLI tools
+
+## Troubleshooting
+
+### Zsh Tab Completion Not Working
+
+**Problem:** After running `make setup` and `source setup.sh`, tab completion doesn't work for `wt` or other commands.
+
+**Cause:** Stale zsh completion cache from before completion files were moved to `src/completion/`.
+
+**Solution:**
+```bash
+# Delete the completion cache
+rm -f ~/.zcompdump ~/.zcompdump.zwc
+
+# Restart your zsh session
+exec zsh
+
+# Or just re-source setup.sh
+source setup.sh
+```
+
+After this one-time cleanup, tab completions should work normally.
+
+**Verify it's working:**
+```bash
+# Check if command is available
+which wt
+
+# Try tab completion
+wt <TAB>
+```
