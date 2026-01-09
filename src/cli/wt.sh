@@ -453,13 +453,14 @@ cmd_spawn() {
 
     # Invoke Claude if not disabled
     if [ "$no_agent" = false ] && command -v claude >/dev/null 2>&1; then
-        local claude_flags=""
+        local yolo=""
+        local headless=""
         if [ "$yolo" = true ]; then
             echo "WARNING: --yolo active; Claude will run with --dangerously-skip-permissions" >&2
-            claude_flags="--dangerously-skip-permissions"
+            yolo="--dangerously-skip-permissions"
         fi
         if [ "$headless" = true ]; then
-            claude_flags="$claude_flags --print"
+            headless="--print"
         fi
 
         if [ "$headless" = true ]; then
@@ -468,11 +469,11 @@ cmd_spawn() {
             mkdir -p "$log_dir"
             local log_file="$log_dir/issue-${issue_no}-$(date +%Y%m%d-%H%M%S).log"
             echo "Invoking Claude Code in headless mode..."
-            cd "$worktree_path" && claude $claude_flags "/issue-to-impl $issue_no" > "$log_file" 2>&1 &
+            cd "$worktree_path" && claude $yolo $headless "/issue-to-impl $issue_no" > "$log_file" 2>&1 &
             echo "Claude running in background (PID: $!), log: $log_file"
         else
             echo "Invoking Claude Code..."
-            cd "$worktree_path" && claude $claude_flags "/issue-to-impl $issue_no" || {
+            cd "$worktree_path" && claude $yolo "/issue-to-impl $issue_no" || {
                 echo "Warning: Failed to invoke Claude Code" >&2
             }
         fi
