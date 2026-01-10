@@ -1,13 +1,14 @@
 ---
 name: sync-master
 description: Synchronize local main/master branch with upstream (or origin) using rebase
+argument_hint: "[PR_NUMBER]"
 ---
 
 # Sync Master Command
 
-Synchronize your local main or master branch with the latest changes from the upstream repository.
+Synchronize your local main or master branch with the latest changes from the upstream repository, then optionally verify a PR's merge status.
 
-Invoke the command: `/sync-master`
+Invoke the command: `/sync-master [PR_NUMBER]`
 
 This command will:
 1. Check git status for uncommitted changes
@@ -15,7 +16,12 @@ This command will:
 3. Checkout to the detected default branch
 4. Detect available remotes (upstream or origin)
 5. Pull latest changes using `--rebase`
-6. Report success or failure
+6. If PR number provided, verify the PR is mergeable
+7. Report success or failure
+
+## Inputs
+
+- `$ARGUMENTS` (optional): PR number to verify merge status after sync
 
 ## Workflow Steps
 
@@ -102,12 +108,49 @@ Inform the user:
 Pulling latest changes from <detected-remote> with rebase...
 ```
 
-### Step 6: Report Results
+### Step 6: Verify PR Merge Status (if PR number provided)
 
-If successful:
+If `$ARGUMENTS` contains a PR number, query the PR's merge status:
+
+```bash
+gh pr view <PR_NUMBER> --json mergeable,mergeStateStatus
+```
+
+Parse the JSON response:
+- `mergeable`: `MERGEABLE`, `CONFLICTING`, or `UNKNOWN`
+- `mergeStateStatus`: `CLEAN`, `DIRTY`, `BLOCKED`, `BEHIND`, etc.
+
+### Step 7: Report Results
+
+If sync successful and no PR number provided:
 
 ```
 Successfully synchronized <detected-branch> branch with <detected-remote>/<detected-branch>
+```
+
+If sync successful and PR is mergeable (`mergeable` = `MERGEABLE` and `mergeStateStatus` = `CLEAN`):
+
+```
+Successfully synchronized <detected-branch> branch with <detected-remote>/<detected-branch>
+
+PR #<PR_NUMBER> is mergeable.
+```
+
+If sync successful but PR has conflicts (`mergeable` = `CONFLICTING`):
+
+```
+Successfully synchronized <detected-branch> branch with <detected-remote>/<detected-branch>
+
+PR #<PR_NUMBER> has merge conflicts. Please rebase your PR branch on <detected-branch>.
+```
+
+If sync successful but PR is blocked or behind (`mergeStateStatus` = `BLOCKED` or `BEHIND`):
+
+```
+Successfully synchronized <detected-branch> branch with <detected-remote>/<detected-branch>
+
+PR #<PR_NUMBER> status: <mergeStateStatus>
+Please check the PR for required checks or updates.
 ```
 
 If rebase conflicts occur, inform the user:
@@ -134,3 +177,4 @@ Common error scenarios:
 - Branch not found → Inform user
 - Rebase conflicts → User resolves manually
 - Remote not configured → Git will error naturally
+- PR not found → `gh` will error naturally
