@@ -1,16 +1,22 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "agentize",
-  "version": "1.0.0",
   "description": "AI-powered development workflow with planning, implementation, and review commands",
-  "author": {
-    "name": "SyntheSys-Lab"
+  "owner": {
+    "name": "SyntheSys-Lab",
+    "email": "jian.weng@kaust.edu.sa"
   },
-  "homepage": "https://github.com/Synthesys-Lab/agentize",
-  "repository": "https://github.com/Synthesys-Lab/agentize",
-  "license": "MIT",
-  "keywords": ["planning", "implementation", "code-review", "tdd", "workflow"],
-  "commands": "./commands",
-  "skills": "./skills",
-  "agents": "./agents",
-  "hooks": "./hooks/hooks.json"
+  "plugins": [
+    {
+      "name": "agentize",
+      "description": "AI-powered development workflow with planning, implementation, and review commands",
+      "version": "1.0.0",
+      "author": {
+        "name": "SyntheSys-Lab"
+      },
+      "source": ".",
+      "category": "development",
+      "homepage": "https://github.com/Synthesys-Lab/agentize"
+    }
+  ]
 }
