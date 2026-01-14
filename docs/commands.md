@@ -4,7 +4,7 @@ This document describes the command definitions for Claude Code. Commands are sh
 
 ## Purpose
 
-Commands provide a simple interface to invoke complex workflows or skills. Each command is defined in a markdown file with frontmatter metadata in the `commands/` directory.
+Commands provide a simple interface to invoke complex workflows or skills. Each command is defined in a markdown file with frontmatter metadata in the `.claude-plugin/commands/` directory.
 
 ## Configuration
 

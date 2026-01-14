@@ -4,7 +4,7 @@ This document describes the agent definitions for Claude Code. Agents are specia
 
 ## Purpose
 
-Agents provide isolated execution environments for complex, multi-step tasks. Each agent is defined as a markdown file with YAML frontmatter configuration in the `agents/` directory.
+Agents provide isolated execution environments for complex, multi-step tasks. Each agent is defined as a markdown file with YAML frontmatter configuration in the `.claude-plugin/agents/` directory.
 
 ## Configuration
 

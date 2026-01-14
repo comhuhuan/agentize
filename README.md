@@ -42,8 +42,8 @@ source $HOME/.agentize/setup.sh
 For Claude Code users, install Agentize as a plugin:
 
 ```bash
-# Development/testing: point to local directory
-claude --plugin-dir /path/to/agentize
+# Development/testing: point to .claude-plugin/ subdirectory
+claude --plugin-dir /path/to/agentize/.claude-plugin
 
 # From marketplace (once published)
 /plugin install agentize@synthesys-lab
@@ -130,11 +130,12 @@ Use `lol --help` for complete documentation.
 
 ```plaintext
 agentize/
-├── .claude-plugin/         # Plugin manifest (plugin.json)
-├── commands/               # Claude Code commands
-├── skills/                 # Claude Code skills
-├── agents/                 # Claude Code agents
-├── hooks/                  # Claude Code hooks
+├── .claude-plugin/         # Plugin root (use with --plugin-dir)
+│   ├── marketplace.json    # Plugin manifest
+│   ├── commands/           # Claude Code commands
+│   ├── skills/             # Claude Code skills
+│   ├── agents/             # Claude Code agents
+│   └── hooks/              # Claude Code hooks
 ├── python/                 # Python modules (agentize.*)
 ├── docs/                   # Documentation
 │   ├── plugin-installation.md  # Plugin installation guide

@@ -65,7 +65,7 @@ To set up an SDK project:
 
 Alternatively, use Agentize as a Claude Code plugin:
 ```bash
-claude --plugin-dir /path/to/agentize
+claude --plugin-dir /path/to/agentize/.claude-plugin
 ```
 
 ## What Gets Created

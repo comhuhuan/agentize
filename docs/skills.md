@@ -4,7 +4,7 @@ This document describes the skill definitions for Claude Code. Skills are reusab
 
 ## Purpose
 
-Skills provide modular, reusable AI capabilities that can be composed into larger workflows. Each skill is defined in a subdirectory under `skills/` with a `SKILL.md` file containing frontmatter and instructions.
+Skills provide modular, reusable AI capabilities that can be composed into larger workflows. Each skill is defined in a subdirectory under `.claude-plugin/skills/` with a `SKILL.md` file containing frontmatter and instructions.
 
 ## Configuration
 

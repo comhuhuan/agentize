@@ -11,10 +11,10 @@ This page covers plugin installation. For CLI installation, see the [Quick Start
 
 ### Method 1: Development Testing (Local Path)
 
-For testing or development, point Claude Code directly to the plugin directory:
+For testing or development, point Claude Code to the `.claude-plugin/` subdirectory:
 
 ```bash
-claude --plugin-dir /path/to/agentize
+claude --plugin-dir /path/to/agentize/.claude-plugin
 ```
 
 ### Method 2: From GitHub (Marketplace)
@@ -87,4 +87,4 @@ Ensure the plugin is properly installed:
 
 ### Hooks not running
 
-Check that `${CLAUDE_PLUGIN_ROOT}` is set when hooks execute. The plugin manifest at `.claude-plugin/plugin.json` must correctly reference `./hooks/hooks.json`.
+Check that `${CLAUDE_PLUGIN_ROOT}` is set when hooks execute. The plugin manifest at `.claude-plugin/marketplace.json` defines the plugin, and hooks are located at `.claude-plugin/hooks/`.

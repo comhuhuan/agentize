@@ -7,7 +7,7 @@
   "plugins": [
     {
       "name": "agentize",
-      "source": "./",
+      "source": "./.claude-plugin/",
       "description": "AI-powered development workflow with planning, implementation, and review commands",
       "version": "1.0.0",
       "author": {

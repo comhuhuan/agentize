@@ -21,7 +21,7 @@ from agentize.telegram_utils import escape_html as _shared_escape_html, telegram
 # Import logger from hooks directory
 import sys
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-_hooks_path = os.path.join(_project_root, 'hooks')
+_hooks_path = os.path.join(_project_root, '.claude-plugin', 'hooks')
 if _hooks_path not in sys.path:
     sys.path.insert(0, _hooks_path)
 from logger import log_tool_decision
