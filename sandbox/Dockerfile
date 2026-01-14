@@ -68,8 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 FROM python AS sdkman
 
 # Install SDKMAN
-RUN curl -s "https://get.sdkman.io" | bash \
-    && rm -rf /root/.sdkman/bin/sdkman-init.sh
+RUN curl -s "https://get.sdkman.io" | bash
 
 # Configure shell profile for SDKMAN
 RUN echo 'source "$HOME/.sdkman/bin/sdkman-init.sh"' >> /root/.bashrc
@@ -130,6 +129,10 @@ RUN mkdir -p /etc/sudoers.d \
 RUN useradd -m -s /bin/bash agentizer \
     && mkdir -p /home/agentizer/.claude/downloads \
     && chown -R agentizer:agentizer /home/agentizer
+
+# Copy SDKMAN installation from root to agentizer home
+RUN cp -r /root/.sdkman /home/agentizer/.sdkman \
+    && chown -R agentizer:agentizer /home/agentizer/.sdkman
 
 # Set working directory
 WORKDIR /workspace
