@@ -112,7 +112,9 @@ RUN mkdir -p /root/.claude/downloads
 # Install Claude Code (silent mode - assumes install.sh works in container)
 RUN chmod +x /tmp/install.sh \
     && /tmp/install.sh stable \
-    && rm -f /tmp/install.sh
+    && rm -f /tmp/install.sh \
+    && rm -f /usr/local/bin/claude \
+    && cp /root/.local/bin/claude /usr/local/bin/claude && chmod +x /usr/local/bin/claude
 
 # -----------------------------------------------------------------------------
 # Stage 8: Final
