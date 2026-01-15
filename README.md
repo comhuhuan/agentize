@@ -36,23 +36,6 @@ Then add to your shell RC file (`~/.bashrc`, `~/.zshrc`, etc.):
 ```bash
 source $HOME/.agentize/setup.sh
 ```
-
-### Plugin Install (Claude Code)
-
-For Claude Code users, install Agentize as a plugin:
-
-```bash
-# Development/testing: point to .claude-plugin/ subdirectory
-claude --plugin-dir /path/to/agentize/.claude-plugin
-
-# From marketplace (once published)
-/plugin install agentize@synthesys-lab
-```
-
-Plugin mode namespaces all commands with `agentize:` prefix (e.g., `/agentize:ultra-planner`).
-
-See [docs/plugin-installation.md](./docs/plugin-installation.md) for details.
-
 ## Core Philosophy
 
 1. Plan first, code later: Use AI to generate a detailed plan before writing any code.
@@ -86,45 +69,6 @@ Learn Agentize in 15 minutes with our step-by-step tutorials (3-5 min each):
 3. **[Ultra Planner](./docs/tutorial/01b-ultra-planner.md)** - Multi-agent debate-based planning for complex features
 4. **[Issue to Implementation](./docs/tutorial/02-issue-to-impl.md)** - Complete development cycle with `/issue-to-impl`, `/code-review`, and `/sync-master`
 5. **[Advanced Usage](./docs/tutorial/03-advanced-usage.md)** - Scale up with parallel development workflows
-
-## Cross-Project Shell Functions
-
-Agentize provides shell functions that work from any directory:
-- `wt` - Manage worktrees in bare git repositories (spawn, list, remove, prune, purge)
-- `lol` - SDK management utilities (upgrade, project, usage, serve, claude-clean)
-
-For persistence, add `source /path/to/agentize/setup.sh` to your shell RC file (`~/.bashrc`, `~/.zshrc`, etc.).
-
-
-General-purpose git worktree helper for **bare repositories**:
-
-```bash
-wt init                  # Initialize worktree environment (run once per bare repo)
-wt goto main             # Change directory to main worktree
-wt goto 42               # Change directory to issue-42 worktree
-wt spawn 42              # Create issue-42 branch and worktree
-wt list                  # List all worktrees
-wt remove 42             # Remove worktree for issue #42
-wt prune                 # Clean up stale worktree metadata
-wt purge                 # Remove worktrees for closed GitHub issues
-wt help                  # Display help information
-```
-
-**Bare repository requirement:** `wt` works with bare git repositories. Worktrees are created under `<bare-repo>/trees/`. See `docs/cli/wt.md` for migration guide.
-
-### SDK Utilities (`lol`)
-
-Ergonomic commands for SDK management:
-
-```bash
-lol upgrade              # Upgrade agentize installation
-lol project --create     # Create GitHub Projects v2 board
-lol project --associate  # Associate existing project board
-lol usage                # Report Claude Code token usage
-lol claude-clean         # Remove stale project entries
-```
-
-Use `lol --help` for complete documentation.
 
 ## Project Organization
 
