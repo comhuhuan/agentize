@@ -338,29 +338,36 @@ def build_run_command(
     # Volume mounts
     home = Path.home()
 
+    # Use Podman-specific :U flag for user namespace remapping on NFS filesystems
+    # This allows the container to read files owned by different UID/GID on host
+    # (e.g., NFS home directories where host UID doesn't match container UID)
+    # For Docker, we skip the U flag (Docker handles UID mapping differently)
+    is_podman = runtime == "podman"
+    userns_flag = ":U" if is_podman else ""
+
     # 1. claude-code-router config (mounted to both config.json and config-router.json)
     ccr_config = home / ".claude-code-router" / "config.json"
     if ccr_config.exists():
-        cmd.extend(["-v", f"{ccr_config}:/home/agentizer/.claude-code-router/config.json:ro"])
-        cmd.extend(["-v", f"{ccr_config}:/home/agentizer/.claude-code-router/config-router.json:ro"])
+        cmd.extend(["-v", f"{ccr_config}:/home/agentizer/.claude-code-router/config.json:ro{userns_flag}"])
+        cmd.extend(["-v", f"{ccr_config}:/home/agentizer/.claude-code-router/config-router.json:ro{userns_flag}"])
 
     # 2. GitHub CLI credentials (mount individual files for proper permission handling)
     gh_config_yml = home / ".config" / "gh" / "config.yml"
     if gh_config_yml.exists():
-        cmd.extend(["-v", f"{gh_config_yml}:/home/agentizer/.config/gh/config.yml:ro"])
+        cmd.extend(["-v", f"{gh_config_yml}:/home/agentizer/.config/gh/config.yml:ro{userns_flag}"])
 
     gh_hosts = home / ".config" / "gh" / "hosts.yml"
     if gh_hosts.exists():
-        cmd.extend(["-v", f"{gh_hosts}:/home/agentizer/.config/gh/hosts.yml:ro"])
+        cmd.extend(["-v", f"{gh_hosts}:/home/agentizer/.config/gh/hosts.yml:ro{userns_flag}"])
 
     # 3. Git credentials
     git_creds = home / ".git-credentials"
     if git_creds.exists():
-        cmd.extend(["-v", f"{git_creds}:/home/agentizer/.git-credentials:ro"])
+        cmd.extend(["-v", f"{git_creds}:/home/agentizer/.git-credentials:ro{userns_flag}"])
 
     git_config = home / ".gitconfig"
     if git_config.exists():
-        cmd.extend(["-v", f"{git_config}:/home/agentizer/.gitconfig:ro"])
+        cmd.extend(["-v", f"{git_config}:/home/agentizer/.gitconfig:ro{userns_flag}"])
 
     # 4. Project directory
     script_dir = Path(__file__).parent.resolve()
