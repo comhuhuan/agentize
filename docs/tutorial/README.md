@@ -8,9 +8,8 @@ Complete all tutorials in 15 minutes (3-5 minutes each):
 
 1. `00-initialize.md` - Project initialization and setup
 2. `01-ultra-planner.md` - Primary planning tutorial (recommended)
-3. `01b-plan-an-issue.md` - Legacy single-agent planning (deprecated)
-4. `02-issue-to-impl.md` - Complete development cycle from issue to PR
-5. `03-advanced-usage.md` - Parallel development workflows with clones or worktrees
+3. `02-issue-to-impl.md` - Complete development cycle from issue to PR
+4. `03-advanced-usage.md` - Parallel development workflows with clones or worktrees
 
 ## Tutorial Format
 

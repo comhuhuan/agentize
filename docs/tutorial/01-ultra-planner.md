@@ -41,8 +41,8 @@ Bold-proposer runs first to generate a concrete proposal, then Critique and Redu
 - You want thorough multi-perspective analysis even for simple changes
 - The feature needs SOTA research even if LOC is low
 
-**Use `/plan-an-issue`** as a standalone alternative:
-- When you want direct single-agent planning without understander
+**Use `/plan-to-issue`** as a standalone alternative:
+- When you have an existing plan and want to convert it to a GitHub issue
 - For time-sensitive planning with known scope
 
 ## Workflow Example

@@ -32,7 +32,7 @@ This document tracks the testing status of AI rules, skills, and commands in thi
 
 ---
 
-### plan-an-issue (command)
+### plan-to-issue (command)
 **Status**: ✅ Validated
 
 **Dogfeeding Examples**:
@@ -136,7 +136,7 @@ This document tracks the testing status of AI rules, skills, and commands in thi
 **Status**: ⚠️ Partial
 
 **Notes**:
-- Now named plan-an-issue for `[plan]` issues
+- Now named plan-to-issue for `[plan]` issues
 - Need to clarify if there's a separate skill for non-plan issues
 
 ---
@@ -257,7 +257,7 @@ This document tracks the testing status of AI rules, skills, and commands in thi
 **Status**: ✅ Validated
 
 **Example**: Issue #30 → PR #33
-1. ✅ Created plan issue with `/plan-an-issue`
+1. ✅ Created plan issue with `/plan-to-issue`
 2. ✅ Created branch with `fork-dev-branch` skill (via issue-to-impl)
 3. ✅ Implemented with milestone skill tracking
 4. ✅ Created milestone commits

@@ -1,13 +1,13 @@
 ---
-name: plan-an-issue
-description: Create GitHub [plan] issues from implementation plans with proper formatting
+name: plan-to-issue
+description: Create GitHub [plan] issues from user-provided existing implementation plan from plan mode or etc.
 argument-hint: [your plan description or file path]
 ---
 
-# Plan an Issue Command
+# Plan to Issue Command
 
-This command failthfully convert the user given implementation plan into our
-plan guidelines and create a well-structured GitHub [plan] issue.
+This command faithfully converts the user given implementation plan into our
+plan guidelines and creates a well-structured GitHub [plan] issue.
 
 Look at the provided $ARGUMENTS.
 If it is a file path, read the file content.

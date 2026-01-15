@@ -25,6 +25,6 @@ This document defines the tags to be used in git commit messages.
 
 ## Issue Tags
 
-- `plan`: A plan that is created by `/plan-an-issue` (simple) or `/ultra-planner` (complicated) commands.
+- `plan`: A plan that is created by `/plan-to-issue` (simple) or `/ultra-planner` (complicated) commands.
 - `discussion`: An issue is created from a summary of a disccussion.
 - `roadmap`: An issue is created from `/roadmapper` command by feeding a `discussion` issue.
