@@ -6,7 +6,7 @@ echo "=== Testing sandbox Dockerfile ==="
 
 # Build the Docker image using the Python script's build command
 echo "Building Docker image..."
-python3 ./sandbox/run.py --build
+uv ./sandbox/run.py --build
 
 # Verify Node.js (use /bin/sh -c to bypass entrypoint)
 echo "Verifying Node.js..."
@@ -18,7 +18,7 @@ podman run --rm --entrypoint=/bin/sh agentize-sandbox -c "npm --version"
 
 # Verify Python + uv
 echo "Verifying Python and uv..."
-podman run --rm --entrypoint=/bin/sh agentize-sandbox -c "python3 --version"
+podman run --rm --entrypoint=/bin/sh agentize-sandbox -c "uv --version"
 podman run --rm --entrypoint=/bin/sh agentize-sandbox -c "uv --version"
 
 # Verify Git

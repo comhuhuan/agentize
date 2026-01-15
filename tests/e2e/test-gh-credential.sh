@@ -14,7 +14,7 @@ echo "=== Testing GH CLI credential passthrough ==="
 
 # Test 1: Verify GH CLI is installed
 echo "Test 1: Verifying GH CLI is installed..."
-OUTPUT=$(python3 ./sandbox/run.py -- --cmd which gh 2>&1)
+OUTPUT=$(uv ./sandbox/run.py -- --cmd which gh 2>&1)
 if echo "$OUTPUT" | grep -q "gh"; then
     echo "PASS: GH CLI is installed"
 else
@@ -45,7 +45,7 @@ fi
 
 # Test 4: Verify GH can run (auth status or error message)
 echo "Test 4: Verifying GH CLI can execute..."
-OUTPUT=$(python3 ./sandbox/run.py -- --cmd gh --version 2>&1)
+OUTPUT=$(uv ./sandbox/run.py -- --cmd gh --version 2>&1)
 if echo "$OUTPUT" | grep -q "gh version"; then
     echo "PASS: GH CLI can execute"
 else
@@ -61,7 +61,7 @@ if [ -n "$GITHUB_TOKEN" ]; then
 
     set +e
     # Note: run.py --cmd passes arguments directly without shell interpretation
-    AUTH_OUTPUT=$(python3 ./sandbox/run.py -- --cmd bash -c gh\ auth\ status 2>&1)
+    AUTH_OUTPUT=$(uv ./sandbox/run.py -- --cmd bash -c gh\ auth\ status 2>&1)
     AUTH_EXIT=$?
     set -e
 
@@ -73,7 +73,7 @@ if [ -n "$GITHUB_TOKEN" ]; then
         set +e
         # Get username first
         USERNAME=$(gh api user -q.login)
-        REPO_OUTPUT=$(python3 ./sandbox/run.py -- --cmd bash -c "gh repo list $USERNAME --limit 1" 2>&1)
+        REPO_OUTPUT=$(uv ./sandbox/run.py -- --cmd bash -c "gh repo list $USERNAME --limit 1" 2>&1)
         REPO_EXIT=$?
         set -e
 

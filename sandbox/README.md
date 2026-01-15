@@ -63,7 +63,7 @@ The `run.py` script automatically handles container image building:
 ```bash
 # Build/rebuild the image (uses local config or auto-detection)
 make sandbox-build
-python3 ./sandbox/run.py --build
+uv ./sandbox/run.py --build
 
 # Build with custom architecture
 podman build --build-arg HOST_ARCH=arm64 -t agentize-sandbox ./sandbox
@@ -75,22 +75,22 @@ Use `run.py` to mount external resources into the container:
 
 ```bash
 # Basic usage (auto-builds if needed)
-python3 ./sandbox/run.py
+uv ./sandbox/run.py
 
 # Run with custom container name
-python3 ./sandbox/run.py my-container
+uv ./sandbox/run.py my-container
 
 # Pass arguments to the container
-python3 ./sandbox/run.py -- --help
+uv ./sandbox/run.py -- --help
 
 # Run with --ccr flag for CCR mode
-python3 ./sandbox/run.py -- --ccr --help
+uv ./sandbox/run.py -- --ccr --help
 
 # Execute custom command
-python3 ./sandbox/run.py --cmd -- ls /workspace
+uv ./sandbox/run.py --cmd -- ls /workspace
 
 # Force rebuild the image
-python3 ./sandbox/run.py --build
+uv ./sandbox/run.py --build
 ```
 
 Or use the Makefile:
@@ -117,7 +117,7 @@ The container supports two modes via the entrypoint:
 Without `--ccr` flag, runs Claude Code:
 
 ```bash
-python3 ./sandbox/run.py -- claude --help
+uv ./sandbox/run.py -- claude --help
 ```
 
 ### CCR Mode
@@ -125,7 +125,7 @@ python3 ./sandbox/run.py -- claude --help
 With `--ccr` flag, runs claude-code-router:
 
 ```bash
-python3 ./sandbox/run.py -- --ccr --help
+uv ./sandbox/run.py -- --ccr --help
 ```
 
 ## Testing

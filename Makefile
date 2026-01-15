@@ -30,11 +30,11 @@ pre-commit:
 
 # Build sandbox image (uses local config or auto-detection)
 sandbox-build:
-	python3 ./sandbox/run.py --build
+	uv run ./sandbox/run.py --build
 
 # Run sandbox with passthrough (auto-builds if needed)
 sandbox-run:
-	python3 ./sandbox/run.py $(filter-out $@,$(MAKECMDGOALS))
+	uv run ./sandbox/run.py $(filter-out $@,$(MAKECMDGOALS))
 
 setup:
 	@echo "Generating local setup script..."

@@ -13,7 +13,7 @@ fi
 
 # Test 2: run.py can execute container (--help) - this will auto-build if needed
 echo "Verifying run.py can execute container..."
-python3 ./sandbox/run.py -- --help > /dev/null 2>&1 || true
+uv ./sandbox/run.py -- --help > /dev/null 2>&1 || true
 
 # Test 3: Verify volume mounts are constructed correctly by examining docker run command
 echo "Verifying volume mount construction..."

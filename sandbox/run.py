@@ -199,25 +199,56 @@ def ensure_image(runtime: str, context: Path) -> bool:
 
 
 def parse_arguments(argv=None):
-    """Parse command line arguments."""
-    # Handle -- separator: everything after -- goes to container_args
+    """Parse command line arguments.
+
+    Handles multiple argument patterns:
+    - ./run.py -- --help                    -> container_args=['--help']
+    - ./run.py --cmd bash                   -> custom_cmd=['bash']
+    - ./run.py --cmd bash -c "echo hello"   -> custom_cmd=['bash', '-c', 'echo hello']
+    - ./run.py my-container -- --help       -> container_name='my-container', container_args=['--help']
+    """
     if argv is None:
         argv = sys.argv[1:]
 
-    # Find -- separator
-    dash_dash_idx = -1
-    for i, arg in enumerate(argv):
-        if arg == "--":
-            dash_dash_idx = i
-            break
+    custom_cmd = []
+    container_args = []
 
-    if dash_dash_idx >= 0:
-        # Split at --
-        pre_dash = argv[:dash_dash_idx]
-        post_dash = argv[dash_dash_idx + 1:]
-    else:
-        pre_dash = argv
-        post_dash = []
+    # Extract custom_cmd (after --cmd) and container_args (after --)
+    i = 0
+    cmd_mode = False
+    dash_dash_mode = False
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            dash_dash_mode = True
+            i += 1
+            continue
+        if arg == "--cmd":
+            cmd_mode = True
+            i += 1
+            continue
+
+        if cmd_mode and not dash_dash_mode:
+            custom_cmd.append(arg)
+        elif dash_dash_mode:
+            container_args.append(arg)
+        i += 1
+
+    # Build filtered argv for argparse (remove --cmd and everything after it, and --)
+    # Remove --cmd and any args that were captured as custom_cmd
+    filtered_argv = []
+    skip_until_dash = False
+    for arg in argv:
+        if skip_until_dash:
+            if arg == "--":
+                skip_until_dash = False
+            continue
+        if arg == "--cmd":
+            skip_until_dash = True
+            continue
+        if arg == "--":
+            continue  # Don't include -- in filtered argv
+        filtered_argv.append(arg)
 
     parser = argparse.ArgumentParser(
         description="Run agentize container with volume passthrough.",
@@ -250,10 +281,13 @@ def parse_arguments(argv=None):
         help="Container name (default: agentize_runner)",
     )
 
-    parsed = parser.parse_args(pre_dash)
+    parsed = parser.parse_args(filtered_argv)
 
-    # Return both parsed args and the post-dash arguments
-    return parsed, post_dash
+    # If custom_cmd was provided via --cmd, use it
+    if custom_cmd:
+        parsed.cmd = True
+
+    return parsed, container_args, custom_cmd
 
 
 def parse_container_args(argv):
@@ -358,7 +392,7 @@ def build_run_command(
 
 def main():
     """Main entry point."""
-    args, post_dash = parse_arguments()
+    args, container_args, custom_cmd = parse_arguments()
 
     # Determine container runtime
     runtime = get_container_runtime()
@@ -386,8 +420,8 @@ def main():
     # Determine if running in interactive mode
     interactive = is_interactive()
 
-    # Parse arguments after -- separator
-    container_args, custom_cmd = parse_container_args(post_dash)
+    # If custom_cmd is provided via --cmd, use it (overrides container_args)
+    use_cmd = args.cmd or bool(custom_cmd)
 
     # Build and execute command
     cmd = build_run_command(
