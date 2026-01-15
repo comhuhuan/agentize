@@ -50,7 +50,6 @@ The command expects the GitHub Projects v2 board to have the following Status fi
 | Status | Description |
 |--------|-------------|
 | Proposed | Plan proposed by agentize, awaiting approval |
-| Refining | Plan is being refined by `/ultra-planner --refine` |
 | Plan Accepted | Plan approved, ready for implementation |
 | In Progress | Actively being worked on |
 | Done | Implementation complete |
