@@ -338,12 +338,11 @@ def build_run_command(
     # Volume mounts
     home = Path.home()
 
-    # Use Podman-specific :U flag for user namespace remapping on NFS filesystems
-    # This allows the container to read files owned by different UID/GID on host
-    # (e.g., NFS home directories where host UID doesn't match container UID)
-    # For Docker, we skip the U flag (Docker handles UID mapping differently)
-    is_podman = runtime == "podman"
-    userns_flag = ":U" if is_podman else ""
+    # Note: For NFS home directories where host UID doesn't match container UID,
+    # you may need to use the :U flag with Podman (user namespace remapping).
+    # This is not enabled by default as it may have security implications.
+    # To enable, change the line below to: userns_flag = ":U" if is_podman else ""
+    userns_flag = ""
 
     # 1. claude-code-router config (mounted to both config.json and config-router.json)
     ccr_config = home / ".claude-code-router" / "config.json"
