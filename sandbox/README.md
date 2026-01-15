@@ -101,8 +101,10 @@ make sandbox-run -- --help
 ```
 
 The script automatically mounts:
-- `~/.claude-code-router/config.json` -> `/home/agentizer/.claude-code-router/config.json` (read-only)
-- `~/.config/gh` -> `/home/agentizer/.config/gh` (read-write, allows GH to refresh tokens)
+- `~/.claude-code-router/config.json` -> `/home/agentizer/.claude-code-router/config.json` (read-only, used for CCR)
+- `~/.claude-code-router/config.json` -> `/home/agentizer/.claude-code-router/config-router.json` (read-only, for CCR compatibility)
+- `~/.config/gh/config.yml` -> `/home/agentizer/.config/gh/config.yml` (read-only, GH CLI configuration)
+- `~/.config/gh/hosts.yml` -> `/home/agentizer/.config/gh/hosts.yml` (read-only, GH CLI hosts)
 - `~/.git-credentials` -> `/home/agentizer/.git-credentials` (read-only)
 - `~/.gitconfig` -> `/home/agentizer/.gitconfig` (read-only)
 - Current agentize project directory -> `/workspace/agentize`
