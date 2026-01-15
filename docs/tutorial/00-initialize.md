@@ -4,7 +4,7 @@
 
 This tutorial shows you how to set up the Agentize framework in your project.
 Currently, this framework is stuck to Claude Code CLI.
-~I am not sure how long it will take to support other Coding agents.~
+~~I am not sure how long it will take to support other Coding agents.~~
 
 ## Getting Started
 

@@ -9,7 +9,7 @@
       "name": "agentize",
       "source": "./.claude-plugin/",
       "description": "AI-powered development workflow with planning, implementation, and review commands",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "author": {
         "name": "SyntheSys-Lab",
         "email": "jian.weng@kaust.edu.sa"
@@ -17,7 +17,7 @@
       "homepage": "https://github.com/Synthesys-Lab/agentize",
       "repository": "https://github.com/Synthesys-Lab/agentize",
       "license": "MIT",
-      "keywords": ["planning", "code-review", "implementation", "workflow"],
+      "keywords": ["workflow", "tdd", "sdd", "handsoff"],
       "category": "development",
       "strict": false
     }
