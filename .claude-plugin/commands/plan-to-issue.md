@@ -14,3 +14,5 @@ If it is a file path, read the file content.
 If it is direct description text, use it as is.
 Based on our `\plan-guidelines` and `\open-issue` skills, create a well-structured GitHub [plan] issue.
 Ensure the issue includes all the sections described as the prompt template in `\external-consensus` skill.
+
+Remember, after creating the issue, add a `agentize:pr` label to it for further processing.
