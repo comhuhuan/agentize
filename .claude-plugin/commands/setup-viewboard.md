@@ -7,6 +7,8 @@ argument-hint: "[--org <org-name>]"
 # Setup Viewboard Command
 
 Set up a GitHub Projects v2 board for agentize workflow integration.
+NOTE: This command is aimded at being idempotent and can be re-run safely to update our
+new standard of the viewboard.
 
 Invoke the command: `/setup-viewboard [--org <org-name>]`
 
@@ -63,20 +65,17 @@ Read `.agentize.yaml` to check for existing project association under the `proje
 - `project.org` - Organization or user owner
 - `project.id` - Project number
 
-If `.agentize.yaml` does not exist:
+If `.agentize.yaml` does not exist with the required fields, inform the user:
 ```
-Error: .agentize.yaml not found.
-
-Please create .agentize.yaml with at minimum:
-  project:
-    name: <project-name>
-    lang: <python|bash|c|cxx>
+project:
+    name: [project name uses the repo name]
+    lang: [unknown]
 ```
-Stop execution.
 
 ### Step 3: Create or Validate Project Association
 
 **If no existing project association** (`project.org` and `project.id` not present):
+**If already associated**, skip this step!
 
 1. Determine the owner: use `--org` value if provided, otherwise get repository owner via `gh repo view --json owner -q '.owner.login'`
 
@@ -97,6 +96,16 @@ gh api graphql -f query='
       projectV2 { id number url }
     }
   }' -f ownerId="OWNER_NODE_ID" -f title="PROJECT_TITLE"
+```
+
+Once the project is created, set the default repository association to be the current repository:
+```bash
+gh api graphql -f query='
+  mutation($projectId: ID!, $repoId: ID!) {
+    addProjectV2Repository(input: {projectId: $projectId, repositoryId: $repoId}) {
+      projectV2 { id }
+    }
+  }' -f projectId="PROJECT_ID" -f repoId="REPO_ID"
 ```
 
 4. Update `.agentize.yaml` with `project.org` and `project.id` values
@@ -130,12 +139,18 @@ jobs:
 ```
 
 Inform the user:
+
 ```
 Generated automation workflow: .github/workflows/add-to-project.yml
+```
 
+Check if `ADD_TO_PROJECT_PAT` secret is already set in your repository.
+If not, put the following message to the summary in Step 7:
+```
 To enable automation, add a GitHub Actions secret:
   Name: ADD_TO_PROJECT_PAT
   Value: A personal access token with project scope
+This shall be found at `https://github.com/Synthesys-Lab/agentize/blob/main/docs/tutorial/04a-project.md`
 ```
 
 ### Step 5: Verify and Create Status Field Options
@@ -175,7 +190,7 @@ gh api graphql -f query='
       singleSelectOptions: [
         {name: "Proposed", color: PURPLE, description: "Newly proposed issue"}
         {name: "Plan Accepted", color: BLUE, description: "Plan has been accepted"}
-        {name: "Todo", color: GREEN, description: "This item has not been started"}
+        {name: "Rebasing", color: YELLOW, description: "This item is being rebased"}
         {name: "In Progress", color: ORANGE, description: "This is actively being worked on"}
         {name: "Done", color: GRAY, description: "This has been completed"}
       ]
@@ -227,8 +242,6 @@ Setup complete!
 Project: <org>/<id>
 Workflow: .github/workflows/add-to-project.yml
 Labels: agentize:plan, agentize:refine, agentize:dev-req, agentize:bug-report, agentize:pr
-
-See: docs/architecture/project.md for Status field configuration details.
 ```
 
 ## Error Handling
@@ -236,7 +249,6 @@ See: docs/architecture/project.md for Status field configuration details.
 Following the project's philosophy, assume CLI tools are available. Cast errors to users for resolution.
 
 Common error scenarios:
-- `.agentize.yaml` not found → User must create it
 - `gh` CLI not authenticated → User must run `gh auth login`
 - Project creation fails → GraphQL mutation returns error details
 - Status options missing → Provide guidance for manual configuration
