@@ -52,6 +52,23 @@ See [docs/cli/install.md](./docs/cli/install.md) for installation options and tr
 
 **Upgrade:** Run `lol upgrade` to pull the latest changes.
 
+## Troubleshoot
+
+If you encounter any issue during the usage. For example:
+1. It asks you for permission on a really simple operation.
+2. It fails to automatically continue on a session.
+
+```bash
+export HANDSOFF_DEBUG=1
+```
+
+Then re-run the command. This will give you a detailed log in either
+- `/path/to/your/project/.tmp/handsoff-debug.log` or
+- `$HOME/.agentize/.tmp/handsoff-debug.log`
+Paste your logs on issue for me (@were) to debug!
+
+For further help, please visit our [troubleshooting guide](./docs/troubleshoot.md).
+
 ## Core Philosophy
 
 1. Plan first, code later: Use AI to generate a detailed plan before writing any code.
