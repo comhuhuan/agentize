@@ -7,7 +7,11 @@ description: Fetch unresolved PR review threads and apply fixes with user confir
 
 Automates resolving unresolved PR review comments by fetching threads via GitHub's GraphQL API, applying AI-driven code modifications with user confirmation, running tests with bounded retry, and pushing changes with proper `[review]` tag commit formatting. Validates branch context and fails fast on mismatch (automation-friendly).
 
-Invoke the skill: /resolve-review <pr-no>
+Invocation: /resolve-review <pr-no>
+
+> NOTE: This command is designed to be hands-off!
+> Just faithfully apply changes to resolve all the unresolved and non-outdated review threads
+> in the specified PR. NO NEED to ask user for confirmations.
 
 ## Inputs
 
