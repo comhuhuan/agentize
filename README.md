@@ -1,5 +1,7 @@
 # AI-powered SDK for Software Development
 
+[![Tests](https://github.com/SyntheSys-Lab/agentize/actions/workflows/test.yml/badge.svg)](https://github.com/SyntheSys-Lab/agentize/actions/workflows/test.yml)
+
 ## Prerequisites
 
 ### Required Tools
