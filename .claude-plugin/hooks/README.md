@@ -68,6 +68,19 @@ Hooks enable automated behaviors and integrations at key points in the Claude Co
 - Injects workflow-specific continuation prompts
 - See [docs/feat/core/handsoff.md](../../docs/feat/core/handsoff.md) for details
 
+### post-bash-issue-create.py
+**Event**: PostToolUse (after Bash tool execution)
+
+**Purpose**: Capture issue numbers from `gh issue create` during Ultra Planner workflow
+
+**Behavior**:
+- Intercepts successful `gh issue create` commands
+- Extracts issue number from output URL (e.g., `https://github.com/owner/repo/issues/544`)
+- Checks if running in Ultra Planner workflow context
+- Updates session state file with captured `issue_no`
+- Creates issue index file for reverse lookup
+- Provides additionalContext to Claude confirming issue capture
+
 ## Shared Libraries
 
 All reusable code is located in the `lib/` directory (sibling to `hooks/`). Hooks import from:

@@ -475,22 +475,7 @@ def _check_permission(tool: str, target: str, raw_target: str, workflow: str = '
 
         return ('ask', 'fallback')
     except Exception:
-        # Error recovery: try Haiku, then Telegram, then fallback to ask
-        try:
-            haiku_decision = _ask_haiku_first(tool, raw_target, workflow, session_id)
-            if haiku_decision in ('deny', 'allow'):
-                return (haiku_decision, 'haiku')
-            # Haiku returned ask, try Telegram
-            tg_decision = _telegram_approval_decision(tool, target, session_id, raw_target, workflow)
-            if tg_decision:
-                return (tg_decision, 'telegram')
-            return ('ask', 'fallback')
-        except Exception:
-            # If even Haiku fails, try Telegram as last resort
-            tg_decision = _telegram_approval_decision(tool, target, session_id, raw_target, workflow)
-            if tg_decision:
-                return (tg_decision, 'telegram')
-            return ('ask', 'error')
+        return ('ask', 'error')
 
 
 def _session_dir() -> str:
@@ -581,6 +566,17 @@ def _check_workflow_auto_allow(session: str, tool: str, target: str) -> Optional
         'allow' if workflow permits, None otherwise
     """
     workflow = _get_workflow_type(session)
+
+    # Auto-allow issue creation and editing for ultra-planner workflow
+    if workflow == 'ultra-planner' and tool == 'Bash':
+        issue_creation_patterns = [
+            r'^gh issue create\s+--title\s+.*--body\s+.*',  # gh issue create with title and body
+            r'^gh issue edit\s+\d+\s+--title\s+.*',         # gh issue edit with title
+            r'^gh issue edit\s+\d+\s+--body\s+.*',          # gh issue edit with body
+        ]
+        for pattern in issue_creation_patterns:
+            if re.match(pattern, target):
+                return 'allow'
 
     # Session state modifications allowed for ALL workflows during active sessions
     if tool == 'Bash':
