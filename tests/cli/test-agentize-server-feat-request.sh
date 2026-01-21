@@ -76,8 +76,8 @@ items = json.loads('''$FEAT_REQUEST_ITEMS''')
 filter_ready_feat_requests(items)
 " 2>&1)
 
-if ! echo "$filter_debug_output" | grep -q '\[dev-req-filter\]'; then
-  test_fail "Dev-req debug output missing [dev-req-filter] prefix"
+if ! echo "$filter_debug_output" | grep -q 'filter_ready_feat_requests'; then
+  test_fail "Dev-req debug output missing filter_ready_feat_requests log line"
 fi
 
 if ! echo "$filter_debug_output" | grep -q 'already has agentize:plan'; then
