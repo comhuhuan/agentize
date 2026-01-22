@@ -31,7 +31,7 @@ def main():
             plugin_dir = Path(__file__).resolve().parent.parent
             sys.path.insert(0, str(plugin_dir))
         from lib.permission import determine
-        result = determine(sys.stdin.read())
+        result = determine(sys.stdin.read(), caller='PreToolUse')
     except Exception as e:
         import traceback
         logger('SYSTEM', f'PreToolUse hook error: {e}')

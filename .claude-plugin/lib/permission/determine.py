@@ -588,7 +588,7 @@ def _check_workflow_auto_allow(session: str, tool: str, target: str) -> Optional
     return None
 
 
-def determine(stdin_data: str) -> dict:
+def determine(stdin_data: str, caller: str) -> dict:
     """Determine permission for a tool use request.
 
     This is the main entry point for the permission module.
@@ -629,9 +629,11 @@ def determine(stdin_data: str) -> dict:
     # Debug logging
     _log_debug_info(session, workflow, tool, raw_target, permission_decision, decision_source)
 
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": permission_decision
-        }
-    }
+    if caller == 'PreToolUse':
+        return { "hookSpecificOutput": { "hookEventName": "PreToolUse", "permissionDecision": permission_decision } }
+
+    if caller == 'PermissionRequest':
+        return { "hookSpecificOutput": { "hookEventName": "PermissionRequest", "decision": { "behavior": permission_decision, } } }
+    
+    logger(session, f'Unknown caller for determine(): {caller}')
+    return {}
