@@ -255,9 +255,25 @@ def _log_supervisor_debug(message: dict):
     except Exception:
         pass  # Silently ignore logging errors
 
+def _fmt_prompt(template: str,
+         session_id: str = None,
+         fname: str = None,
+         count: int = 0,
+         max_count: int = 0,
+         pr_no: Optional[int] = None,
+         plan_context: str = '') -> str:
+    # Apply variable substitution using str.replace() with {#var#} syntax
+    return (template
+            .replace('{#session_id#}', session_id or 'N/A')
+            .replace('{#fname#}', fname or 'N/A')
+            .replace('{#continuations#}', str(count))
+            .replace('{#max_continuations#}', str(max_count))
+            .replace('{#pr_no#}', str(pr_no) if pr_no else 'N/A')
+            .replace('{#plan_context#}', plan_context))
 
 def _ask_supervisor_for_guidance(
         session_id: str,
+        fname: str,
         workflow: str,
         continuation_count: int,
         max_continuations: int,
@@ -345,7 +361,7 @@ You are evaluating this given `host session` to see:
    If not, suggest the corrective moves.
 2. If it is making progress towards completing the workflow.
    If so, acknowledge the progress, and suggest next steps to continue on the path.
-3. If the workflow is complete, provide specific instructions to end it!
+3. If the workflow is complete, provide the following instructions to end it:
     jq '.state = "done"' {{#fname#}} > {{#fname#}}.tmp && mv {{#fname#}}.tmp {{#fname#}}
 4. Always remind the host session to use `--body-file` for detailed descriptions when creating Issues or PRs.
    As `--body` with embedded `--` may confuse the CLI parser.
@@ -361,6 +377,13 @@ CONTEXT:
 {transcript_context}
 
 '''
+    
+    prompt = _fmt_prompt(prompt,
+                  fname=fname,
+                  session_id=session_id,
+                  count=continuation_count,
+                  max_count=max_continuations)
+
 
 
     # Get provider configuration
@@ -537,6 +560,7 @@ def has_continuation_prompt(workflow):
     """
     return workflow in _SUPPORTED_WORKFLOWS
 
+
 def get_continuation_prompt(workflow, session_id, fname, count, max_count, pr_no='unknown', transcript_path=None, plan_path=None, plan_excerpt=None):
     """Get formatted continuation prompt for a workflow.
 
@@ -560,7 +584,7 @@ def get_continuation_prompt(workflow, session_id, fname, count, max_count, pr_no
     # Try to get dynamic guidance from supervisor if enabled and transcript available
     if transcript_path:
         guidance = _ask_supervisor_for_guidance(
-            session_id, workflow, count, max_count, transcript_path)
+            session_id, fname, workflow, count, max_count, transcript_path)
         if guidance:
             return guidance
 
@@ -583,11 +607,4 @@ def get_continuation_prompt(workflow, session_id, fname, count, max_count, pr_no
         if plan_excerpt:
             plan_context += f'   {plan_excerpt}\n'
 
-    # Apply variable substitution using str.replace() with {#var#} syntax
-    return (template
-            .replace('{#session_id#}', session_id or 'N/A')
-            .replace('{#fname#}', fname or 'N/A')
-            .replace('{#continuations#}', str(count))
-            .replace('{#max_continuations#}', str(max_count))
-            .replace('{#pr_no#}', str(pr_no) if pr_no else 'N/A')
-            .replace('{#plan_context#}', plan_context))
+    return _fmt_prompt(template, session_id=session_id, fname=fname, count=count, max_count=max_count, pr_no=pr_no, plan_context=plan_context)
