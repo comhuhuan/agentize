@@ -2,6 +2,7 @@
 name: planner-lite
 description: Lightweight single-agent planner for simple modifications (<5 files, <150 LOC, repo-only knowledge)
 skills: plan-guideline
+model: opus
 ---
 
 # Planner-Lite Agent
