@@ -1,5 +1,10 @@
 # Test Registration
 
+NOTE: Make a clear separation between shell tests and Python tests!
+DO NOT use `heredoc` to embed Python code in a shell script to test Python unit,
+and vice versa: DO NOT use `subprocess` calls to invoke shell commands inside Python
+to test shell CLI behavior!
+
 ## Shell Tests
 
 When adding a new shell test:
