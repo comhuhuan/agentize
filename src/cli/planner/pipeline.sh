@@ -454,9 +454,13 @@ _planner_run_pipeline() {
         _planner_issue_publish "$issue_number" "$plan_title" "$consensus_path" || {
             echo "Warning: Failed to publish plan to issue #${issue_number}" >&2
         }
-        # Print styled issue-created line if URL is available
+        # Print final issue link if URL is available
         if [ -n "${_PLANNER_ISSUE_URL:-}" ]; then
-            _planner_print_issue_created "$_PLANNER_ISSUE_URL"
+            if _planner_color_enabled; then
+                printf '\033[1;32mSee the full plan at:\033[0m %s\n' "$_PLANNER_ISSUE_URL" >&2
+            else
+                echo "See the full plan at: $_PLANNER_ISSUE_URL" >&2
+            fi
         fi
     fi
 

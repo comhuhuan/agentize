@@ -83,6 +83,5 @@ _planner_issue_publish() {
         # Non-fatal: body was already updated
     fi
 
-    echo "Published plan to issue #$issue_number" >&2
     return 0
 }
