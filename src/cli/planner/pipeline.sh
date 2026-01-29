@@ -242,10 +242,15 @@ _planner_run_pipeline() {
     if [ -n "$refine_issue_number" ]; then
         refine_instructions="$feature_desc"
         local issue_body
-        issue_body=$(_planner_issue_fetch "$refine_issue_number") || {
+        local issue_body_tmp
+        issue_body_tmp=$(mktemp)
+        if ! _planner_issue_fetch "$refine_issue_number" >"$issue_body_tmp"; then
+            rm -f "$issue_body_tmp"
             echo "Error: Failed to fetch issue #${refine_issue_number} for refinement" >&2
             return 1
-        }
+        fi
+        issue_body=$(cat "$issue_body_tmp")
+        rm -f "$issue_body_tmp"
         if ! echo "$issue_body" | grep -Eq "Implementation Plan:|Consensus Plan:"; then
             echo "Warning: Issue #${refine_issue_number} does not look like a plan (missing Implementation/Consensus Plan headers)" >&2
         fi
@@ -256,7 +261,14 @@ _planner_run_pipeline() {
         issue_number="$refine_issue_number"
         prefix_name="issue-refine-${refine_issue_number}"
     elif [ "$issue_mode" = "true" ]; then
-        issue_number=$(_planner_issue_create "$feature_desc")
+        local issue_number_tmp
+        issue_number_tmp=$(mktemp)
+        if _planner_issue_create "$feature_desc" >"$issue_number_tmp"; then
+            issue_number=$(cat "$issue_number_tmp")
+        else
+            issue_number=""
+        fi
+        rm -f "$issue_number_tmp"
         if [ -n "$issue_number" ]; then
             prefix_name="issue-${issue_number}"
             _planner_stage "Created placeholder issue #${issue_number}"
