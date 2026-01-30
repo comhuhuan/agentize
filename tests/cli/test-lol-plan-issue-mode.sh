@@ -139,10 +139,10 @@ grep -q "add-label.*agentize:plan" "$GH_CALL_LOG" || {
 }
 
 # Verify final title was extracted from consensus header (not the raw feature description)
-grep -q '\[plan\] Improved Test Feature' "$GH_CALL_LOG" || {
+grep -q '\[plan\] \[#42\] Improved Test Feature' "$GH_CALL_LOG" || {
     echo "GH call log:" >&2
     cat "$GH_CALL_LOG" >&2
-    test_fail "Expected final title extracted from consensus 'Implementation Plan:' header"
+    test_fail "Expected final title extracted from consensus 'Implementation Plan:' header with issue prefix"
 }
 
 # ── Test 2: --dry-run skips issue creation ──

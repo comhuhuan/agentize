@@ -604,7 +604,18 @@ _planner_run_pipeline() {
         plan_title=$(grep -m1 -E '^#[[:space:]]*(Implementation|Consensus) Plan:' "$consensus_path" \
             | sed -E 's/^#[[:space:]]*(Implementation|Consensus) Plan:[[:space:]]*//')
         [ -z "$plan_title" ] && plan_title="${feature_desc:0:50}"
-        plan_title=[\#${issue_number}] ${plan_title}
+        local issue_tag="[#${issue_number}]"
+        case "$plan_title" in
+            "${issue_tag}"|"$issue_tag "*)
+                ;;
+            *)
+                if [ -n "$plan_title" ]; then
+                    plan_title="${issue_tag} ${plan_title}"
+                else
+                    plan_title="${issue_tag}"
+                fi
+                ;;
+        esac
         _planner_issue_publish "$issue_number" "$plan_title" "$consensus_path" || {
             echo "Warning: Failed to publish plan to issue #${issue_number}" >&2
         }
@@ -615,6 +626,6 @@ _planner_run_pipeline() {
     fi
 
     # Output consensus path to stdout
-    echo "$consensus_path"
+    term_label "See the full plan locally at:" "$consensus_path"
     return 0
 }

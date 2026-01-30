@@ -36,6 +36,28 @@ export AGENTIZE_HOME="$PROJECT_ROOT"
 TESTS_DIR="$PROJECT_ROOT/tests"
 
 # ============================================================
+# Python runtime selection for tests
+# ============================================================
+# Prefer python3.11 when available to ensure compatibility with PEP 604 types.
+PYTHON_BIN=""
+if command -v python3.11 >/dev/null 2>&1; then
+  PYTHON_BIN="python3.11"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="python"
+else
+  echo "Error: Python runtime not found" >&2
+  exit 1
+fi
+export PYTHON_BIN
+
+python3() {
+  "$PYTHON_BIN" "$@"
+}
+export -f python3
+
+# ============================================================
 # Color constants for terminal output
 # ============================================================
 
