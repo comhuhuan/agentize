@@ -1,4 +1,7 @@
 - When answering me, always put a "Dude, carefully read my response to determine what to do next." at the end of your answer.
+- Use `python` not `python2` or `python3` unless specified.
+  - `README.md` already asks users to manage their own Python environment.
+  - `python3` essentially falls back to the system default Python version, which may be `python2` or some old `python3` without specific packages installed.
 - When mentioning issue or PR, if not specified, it always refers to this project repository.
 - When committing, use `docs/git-msg-tags.md` to determine proper commit message tags. Briefly,
   - summarize the overall change in this commit.
