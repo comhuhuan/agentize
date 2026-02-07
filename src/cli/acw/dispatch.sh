@@ -118,7 +118,11 @@ _acw_kimi_strip_output() {
 
     if ! python - "$input" "$output" <<'PY'
 import json
+import re
 import sys
+
+# Pattern to match <system>...</system> blocks (tool call results)
+_SYSTEM_TAG_RE = re.compile(r'<system>.*?</system>', re.DOTALL)
 
 
 def extract_from_content_list(content):
@@ -132,7 +136,11 @@ def extract_from_content_list(content):
         if text is None:
             text = item.get("content") or item.get("value")
         if isinstance(text, str):
-            parts.append(text)
+            # Remove tool call results (wrapped in <system> tags)
+            text = _SYSTEM_TAG_RE.sub('', text)
+            # Only append if there's meaningful content left
+            if text.strip():
+                parts.append(text)
     return parts
 
 
