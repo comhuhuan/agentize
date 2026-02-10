@@ -167,7 +167,7 @@ def pr_kernel(
     *,
     push_remote: str | None = None,
     base_branch: str | None = None,
-) -> tuple[bool, str, str | None, str | None]
+) -> tuple[Event, str, str | None, str | None, Path]
 ```
 
 Create pull request for the implementation.
@@ -179,17 +179,43 @@ Create pull request for the implementation.
 - `base_branch`: Base branch for PR (auto-detected if None)
 
 **Returns**:
-- `success`: Whether PR was created successfully
-- `message`: PR URL on success, error message on failure
+- `event`: `pr_pass` / `pr_fail_fixable` / `pr_fail_need_rebase`
+- `message`: Human-readable stage reason
 - `pr_number`: PR number as string if created, None otherwise
 - `pr_url`: Full PR URL if created, None otherwise
+- `report_path`: Path to `.tmp/pr-iter-{N}.json`
 
 **Behavior**:
 - Validates PR title format using `_validate_pr_title()`
 - Pushes branch to remote
 - Creates PR using finalize file content
 - Appends "Closes #N" line if not present
-- Returns PR number and URL for downstream CI monitoring
+- Emits explicit event-based failures (`fixable` vs `need_rebase`)
+- Writes structured artifact: `.tmp/pr-iter-{N}.json`
+
+### rebase_kernel()
+
+```python
+def rebase_kernel(
+    state: ImplState,
+    *,
+    push_remote: str | None = None,
+    base_branch: str | None = None,
+) -> tuple[Event, str, Path]
+```
+
+Rebase current branch onto detected base branch for PR recovery.
+
+**Returns**:
+- `event`: `rebase_ok` or `rebase_conflict`
+- `message`: Stage reason for logs/retry context
+- `report_path`: Path to `.tmp/rebase-iter-{N}.json`
+
+**Behavior**:
+- Runs `git fetch <remote>` before rebase.
+- Runs `git rebase <remote>/<base>`.
+- Calls `git rebase --abort` when conflict occurs.
+- Writes structured artifact for deterministic diagnostics.
 
 **Errors**:
 - Raises `ImplError` if PR title format is invalid
@@ -291,3 +317,10 @@ kernel return values and the current state.
 
 In the initial scaffold phase these handlers intentionally return a fatal
 `StageResult` to ensure unsafe partial wiring cannot run silently.
+
+## Stage Artifacts
+
+- `.tmp/parse-iter-{N}.json`: Parse gate report
+- `.tmp/review-iter-{N}.json`: Structured review scores and suggestions
+- `.tmp/pr-iter-{N}.json`: PR stage event diagnostics
+- `.tmp/rebase-iter-{N}.json`: Rebase stage event diagnostics

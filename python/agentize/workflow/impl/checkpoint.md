@@ -14,9 +14,9 @@ resume from the last successful checkpoint.
 @dataclass
 class ImplState:
     """Serializable workflow state for checkpointing."""
-    
+
     issue_no: int
-    current_stage: Literal["impl", "review", "simp", "pr", "done"]
+    current_stage: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
     iteration: int
     worktree: Path
     plan_file: Path | None
@@ -30,12 +30,13 @@ class ImplState:
 **issue_no**: int
 The GitHub issue number being implemented.
 
-**current_stage**: Literal["impl", "review", "simp", "pr", "done"]
+**current_stage**: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
 The current workflow stage. One of:
 - `impl`: Implementation generation stage
 - `review`: Quality review stage
-- `simp`: Simplification stage
 - `pr`: Pull request creation stage
+- `rebase`: Rebase recovery stage for PR-rejected branches
+- `fatal`: Terminal diagnostic stage for converged failures
 - `done`: Workflow completed
 
 **iteration**: int
@@ -214,14 +215,11 @@ The orchestrator handles stage-specific resumption:
 Valid state transitions in the workflow:
 
 ```
-impl -> review -> simp -> pr -> done
- |       |       |       |
- +-------+       |       |
- (feedback loop) |       |
-                 |       |
- (skip simp) ----+       |
-                         |
- (skip if PR exists) ----+
+impl -> review -> pr -> done
+ |       |         |
+ +-------+         +--> rebase --> impl
+ (feedback loop)         |
+                         +--> fatal
 ```
 
 The history field tracks the actual path taken through this graph.

@@ -34,8 +34,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--max-reviews",
         type=int,
-        default=3,
-        help="Maximum review attempts per iteration (default: 3)",
+        default=8,
+        help="Maximum review attempts per iteration (default: 8)",
     )
     parser.add_argument(
         "--impl-model",

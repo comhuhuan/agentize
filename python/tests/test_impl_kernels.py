@@ -13,9 +13,12 @@ from agentize.workflow.impl.kernels import (
     _detect_base_branch,
     _detect_push_remote,
     _iteration_section,
+    _needs_rebase,
     _parse_completion_marker,
     _parse_quality_score,
     _read_optional,
+    pr_kernel,
+    rebase_kernel,
     _section,
     _shell_cmd,
 )
@@ -354,3 +357,154 @@ class TestKernelIntegration:
 
         score = _parse_quality_score(output_file.read_text())
         assert score == 85
+
+
+class TestNeedsRebase:
+    """Tests for rebase signal extraction."""
+
+    def test_detects_non_fast_forward_push_hint(self):
+        message = "! [rejected] branch -> branch (non-fast-forward)"
+        assert _needs_rebase(message) is True
+
+    def test_ignores_unrelated_failures(self):
+        message = "authentication failed"
+        assert _needs_rebase(message) is False
+
+
+class TestPrKernelEvents:
+    """Tests for PR kernel event routing and artifact output."""
+
+    @patch("agentize.workflow.impl.kernels._current_branch", return_value="issue-857")
+    @patch("agentize.workflow.impl.kernels.run_shell_function")
+    def test_returns_rebase_event_when_push_rejected(self, mock_run, _mock_branch, tmp_path: Path):
+        state = create_initial_state(857, tmp_path)
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="non-fast-forward",
+        )
+
+        event, message, pr_number, pr_url, report_path = pr_kernel(
+            state,
+            None,
+            push_remote="origin",
+            base_branch="main",
+        )
+
+        assert event == "pr_fail_need_rebase"
+        assert "Rebase required" in message
+        assert pr_number is None
+        assert pr_url is None
+        assert report_path.exists()
+        assert '"event": "pr_fail_need_rebase"' in report_path.read_text()
+
+    @patch("agentize.workflow.impl.kernels._current_branch", return_value="issue-857")
+    @patch("agentize.workflow.impl.kernels.run_shell_function")
+    def test_returns_fixable_event_for_title_validation_failure(
+        self,
+        mock_run,
+        _mock_branch,
+        tmp_path: Path,
+    ):
+        state = create_initial_state(857, tmp_path)
+        tmp_dir = tmp_path / ".tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        (tmp_dir / "finalize.txt").write_text("bad title\n\nBody")
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        event, message, _pr_number, _pr_url, report_path = pr_kernel(
+            state,
+            None,
+            push_remote="origin",
+            base_branch="main",
+        )
+
+        assert event == "pr_fail_fixable"
+        assert "doesn't match required format" in message
+        assert report_path.exists()
+        assert '"event": "pr_fail_fixable"' in report_path.read_text()
+
+    @patch("agentize.workflow.impl.kernels.gh_utils.pr_create")
+    @patch("agentize.workflow.impl.kernels._current_branch", return_value="issue-857")
+    @patch("agentize.workflow.impl.kernels.run_shell_function")
+    def test_returns_pass_event_on_success(
+        self,
+        mock_run,
+        _mock_branch,
+        mock_pr_create,
+        tmp_path: Path,
+    ):
+        state = create_initial_state(857, tmp_path)
+        tmp_dir = tmp_path / ".tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        (tmp_dir / "finalize.txt").write_text("[agent.workflow][#857] Test title\n\nBody")
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        mock_pr_create.return_value = ("123", "https://example.com/pr/123")
+
+        event, message, pr_number, pr_url, report_path = pr_kernel(
+            state,
+            None,
+            push_remote="origin",
+            base_branch="main",
+        )
+
+        assert event == "pr_pass"
+        assert message == "https://example.com/pr/123"
+        assert pr_number == "123"
+        assert pr_url == "https://example.com/pr/123"
+        assert report_path.exists()
+        assert '"event": "pr_pass"' in report_path.read_text()
+
+
+class TestRebaseKernel:
+    """Tests for rebase stage kernel event outcomes."""
+
+    @patch("agentize.workflow.impl.kernels.run_shell_function")
+    def test_rebase_kernel_returns_ok(self, mock_run, tmp_path: Path):
+        state = create_initial_state(857, tmp_path)
+
+        def side_effect(cmd, **_kwargs):
+            if "git fetch" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            if "git rebase origin/main" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        event, message, report_path = rebase_kernel(
+            state,
+            push_remote="origin",
+            base_branch="main",
+        )
+
+        assert event == "rebase_ok"
+        assert "Rebase completed" in message
+        assert report_path.exists()
+        assert '"event": "rebase_ok"' in report_path.read_text()
+
+    @patch("agentize.workflow.impl.kernels.run_shell_function")
+    def test_rebase_kernel_returns_conflict_and_aborts(self, mock_run, tmp_path: Path):
+        state = create_initial_state(857, tmp_path)
+
+        def side_effect(cmd, **_kwargs):
+            if "git fetch" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            if "git rebase origin/main" in cmd:
+                return MagicMock(returncode=1, stdout="", stderr="conflict")
+            if "git rebase --abort" in cmd:
+                return MagicMock(returncode=0, stdout="", stderr="")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        mock_run.side_effect = side_effect
+
+        event, message, report_path = rebase_kernel(
+            state,
+            push_remote="origin",
+            base_branch="main",
+        )
+
+        assert event == "rebase_conflict"
+        assert "Rebase conflict" in message
+        assert report_path.exists()
+        assert '"event": "rebase_conflict"' in report_path.read_text()

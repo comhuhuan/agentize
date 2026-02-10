@@ -15,6 +15,7 @@ orchestration contracts before production kernels are fully migrated.
 - Kernel registry scaffold integrity and placeholder safety behavior
 - Deterministic parse gate report generation and pass/fail routing contract
 - Deterministic review report artifact and threshold gate behavior (via dedicated review tests)
+- FSM contracts for explicit PR/rebase event taxonomy and terminal fatal convergence
 
 ## Design Rationale
 

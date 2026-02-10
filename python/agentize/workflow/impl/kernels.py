@@ -14,10 +14,16 @@ from agentize.workflow.api import prompt as prompt_utils
 from agentize.workflow.api.session import PipelineError
 from agentize.workflow.impl.state import (
     EVENT_FATAL,
+    EVENT_PR_FAIL_FIXABLE,
+    EVENT_PR_FAIL_NEED_REBASE,
+    EVENT_PR_PASS,
+    EVENT_REBASE_CONFLICT,
+    EVENT_REBASE_OK,
     STAGE_IMPL,
     STAGE_PR,
     STAGE_REBASE,
     STAGE_REVIEW,
+    Event,
     Stage,
     StageResult,
     WorkflowContext,
@@ -912,13 +918,28 @@ def _append_closes_line(finalize_file: Path, issue_no: int) -> None:
     finalize_file.write_text(updated)
 
 
+def _write_stage_report(report_path: Path, report: dict[str, Any]) -> None:
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+
+def _needs_rebase(message: str) -> bool:
+    lowered = message.lower()
+    signatures = (
+        "non-fast-forward",
+        "fetch first",
+        "failed to push some refs",
+        "tip of your current branch is behind",
+    )
+    return any(signature in lowered for signature in signatures)
+
+
 def pr_kernel(
     state: ImplState,
     session: Session | None,
     *,
     push_remote: str | None = None,
     base_branch: str | None = None,
-) -> tuple[bool, str, str | None, str | None]:
+) -> tuple[Event, str, str | None, str | None, Path]:
     """Create pull request for the implementation.
 
     Args:
@@ -928,16 +949,20 @@ def pr_kernel(
         base_branch: Base branch for PR (auto-detected if None).
 
     Returns:
-        Tuple of (success, message, pr_number, pr_url) where:
-        - success: True if PR was created successfully
-        - message: PR URL on success, error message on failure
+        Tuple of (event, message, pr_number, pr_url, report_path) where:
+        - event: PR stage event (`pr_pass`/`pr_fail_fixable`/`pr_fail_need_rebase`)
+        - message: Summary for logs or retry feedback
         - pr_number: PR number as string if created, None otherwise
         - pr_url: Full PR URL if created, None otherwise
+        - report_path: Artifact path for structured PR diagnostics
     """
     from agentize.workflow.impl.impl import ImplError, _validate_pr_title
 
+    _ = session
     tmp_dir = state.worktree / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     finalize_file = tmp_dir / "finalize.txt"
+    report_file = tmp_dir / f"pr-iter-{state.iteration}.json"
 
     # Auto-detect remote and base branch if not provided
     if not push_remote:
@@ -950,13 +975,30 @@ def pr_kernel(
     # Push branch
     cmd_parts: list[str | Path] = ["git", "push", "-u", push_remote, branch_name]
     push_cmd = _shell_cmd(cmd_parts)
-    push_result = run_shell_function(push_cmd, cwd=state.worktree)
+    push_result = run_shell_function(push_cmd, capture_output=True, cwd=state.worktree)
     if push_result.returncode != 0:
-        print(
-            f"Warning: Failed to push branch to {push_remote}",
-            file=sys.stderr,
+        push_output = "\n".join(
+            chunk
+            for chunk in (push_result.stderr.strip(), push_result.stdout.strip())
+            if chunk
         )
-        # Continue anyway, PR might still be creatable
+        event = EVENT_PR_FAIL_NEED_REBASE if _needs_rebase(push_output) else EVENT_PR_FAIL_FIXABLE
+        message = (
+            f"Push rejected before PR creation. {'Rebase required.' if event == EVENT_PR_FAIL_NEED_REBASE else 'Manual fix required.'}"
+        )
+        report = {
+            "event": event,
+            "pass": False,
+            "reason": message,
+            "details": push_output,
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return event, message, None, None, report_file
 
     # Get PR title from finalize file
     pr_title = ""
@@ -969,7 +1011,22 @@ def pr_kernel(
     try:
         _validate_pr_title(pr_title, state.issue_no)
     except ImplError as exc:
-        return False, str(exc), None, None
+        report = {
+            "event": EVENT_PR_FAIL_FIXABLE,
+            "pass": False,
+            "reason": str(exc),
+            "details": "PR title validation failed.",
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_PR_FAIL_FIXABLE, str(exc), None, None, report_file
+
+    if not finalize_file.exists():
+        finalize_file.write_text(f"{pr_title}\n\n")
 
     # Append closes line
     _append_closes_line(finalize_file, state.issue_no)
@@ -984,6 +1041,112 @@ def pr_kernel(
             head=branch_name,
             cwd=state.worktree,
         )
-        return True, pr_url or f"PR #{pr_number} created", pr_number, pr_url
+        message = pr_url or f"PR #{pr_number} created"
+        report = {
+            "event": EVENT_PR_PASS,
+            "pass": True,
+            "reason": message,
+            "details": "",
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_PR_PASS, message, pr_number, pr_url, report_file
     except RuntimeError as exc:
-        return False, f"Failed to create PR: {exc}", None, None
+        message = f"Failed to create PR: {exc}"
+        event = EVENT_PR_FAIL_NEED_REBASE if _needs_rebase(message) else EVENT_PR_FAIL_FIXABLE
+        report = {
+            "event": event,
+            "pass": False,
+            "reason": message,
+            "details": str(exc),
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return event, message, None, None, report_file
+
+
+def rebase_kernel(
+    state: ImplState,
+    *,
+    push_remote: str | None = None,
+    base_branch: str | None = None,
+) -> tuple[Event, str, Path]:
+    """Rebase current branch onto upstream base branch.
+
+    Returns:
+        Tuple of (event, message, report_path) where event is `rebase_ok`
+        or `rebase_conflict`.
+    """
+    tmp_dir = state.worktree / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    report_file = tmp_dir / f"rebase-iter-{state.iteration}.json"
+
+    if not push_remote:
+        push_remote = _detect_push_remote(state.worktree)
+    if not base_branch:
+        base_branch = _detect_base_branch(state.worktree, push_remote)
+
+    fetch_cmd = _shell_cmd(["git", "fetch", push_remote])
+    fetch_result = run_shell_function(fetch_cmd, capture_output=True, cwd=state.worktree)
+    fetch_output = "\n".join(
+        chunk
+        for chunk in (fetch_result.stderr.strip(), fetch_result.stdout.strip())
+        if chunk
+    )
+    if fetch_result.returncode != 0:
+        message = f"Failed to fetch {push_remote}/{base_branch} before rebase."
+        report = {
+            "event": EVENT_REBASE_CONFLICT,
+            "pass": False,
+            "reason": message,
+            "details": fetch_output,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_REBASE_CONFLICT, message, report_file
+
+    rebase_target = f"{push_remote}/{base_branch}"
+    rebase_cmd = _shell_cmd(["git", "rebase", rebase_target])
+    rebase_result = run_shell_function(rebase_cmd, capture_output=True, cwd=state.worktree)
+    rebase_output = "\n".join(
+        chunk
+        for chunk in (rebase_result.stderr.strip(), rebase_result.stdout.strip())
+        if chunk
+    )
+    if rebase_result.returncode == 0:
+        message = f"Rebase completed on {rebase_target}."
+        report = {
+            "event": EVENT_REBASE_OK,
+            "pass": True,
+            "reason": message,
+            "details": rebase_output,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_REBASE_OK, message, report_file
+
+    run_shell_function(
+        _shell_cmd(["git", "rebase", "--abort"]),
+        cwd=state.worktree,
+    )
+    message = f"Rebase conflict detected while rebasing onto {rebase_target}."
+    report = {
+        "event": EVENT_REBASE_CONFLICT,
+        "pass": False,
+        "reason": message,
+        "details": rebase_output,
+        "push_remote": push_remote,
+        "base_branch": base_branch,
+    }
+    _write_stage_report(report_file, report)
+    return EVENT_REBASE_CONFLICT, message, report_file
