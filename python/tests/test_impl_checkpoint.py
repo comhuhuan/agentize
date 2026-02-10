@@ -23,7 +23,7 @@ class TestImplState:
         """Test that to_dict converts Path objects to strings."""
         state = ImplState(
             issue_no=42,
-            current_stage="impl",
+            current_stage="rebase",
             iteration=3,
             worktree=tmp_path / "worktree",
             plan_file=tmp_path / "plan.md",
@@ -35,7 +35,7 @@ class TestImplState:
         data = state.to_dict()
 
         assert data["issue_no"] == 42
-        assert data["current_stage"] == "impl"
+        assert data["current_stage"] == "rebase"
         assert data["iteration"] == 3
         assert data["worktree"] == str(tmp_path / "worktree")
         assert data["plan_file"] == str(tmp_path / "plan.md")
@@ -64,7 +64,7 @@ class TestImplState:
         """Test that from_dict reconstructs Path objects."""
         data = {
             "issue_no": 42,
-            "current_stage": "review",
+            "current_stage": "fatal",
             "iteration": 2,
             "worktree": str(tmp_path / "worktree"),
             "plan_file": str(tmp_path / "plan.md"),
@@ -76,7 +76,7 @@ class TestImplState:
         state = ImplState.from_dict(data)
 
         assert state.issue_no == 42
-        assert state.current_stage == "review"
+        assert state.current_stage == "fatal"
         assert state.iteration == 2
         assert state.worktree == tmp_path / "worktree"
         assert isinstance(state.worktree, Path)
@@ -396,3 +396,22 @@ class TestRoundTrip:
         assert len(loaded_state.history) == len(original_state.history)
         for i, entry in enumerate(loaded_state.history):
             assert entry == original_state.history[i]
+
+    def test_rebase_stage_round_trip(self, tmp_path: Path):
+        """Test that rebase stage value survives serialization round-trip."""
+        original_state = ImplState(
+            issue_no=857,
+            current_stage="rebase",
+            iteration=6,
+            worktree=tmp_path / "worktree",
+            plan_file=None,
+            last_feedback="Need rebase before PR",
+            last_score=0,
+            history=[],
+        )
+        checkpoint_path = tmp_path / "checkpoint.json"
+
+        save_checkpoint(original_state, checkpoint_path)
+        loaded_state = load_checkpoint(checkpoint_path)
+
+        assert loaded_state.current_stage == "rebase"

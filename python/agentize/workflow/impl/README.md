@@ -20,8 +20,8 @@ flowchart TB
         direction TB
         impl_k["impl_kernel"]
         review_k["review_kernel"]
-        simp_k["simp_kernel"]
         pr_k["pr_kernel"]
+        rebase_k["rebase_kernel"]
     end
 
     subgraph Checkpoint["Checkpoint (checkpoint.py)"]
@@ -48,11 +48,29 @@ flowchart TB
 | File | Purpose |
 |------|---------|
 | `impl.py` | Main orchestrator with state machine and backward-compatible interface |
-| `kernels.py` | Kernel functions for each workflow stage (impl, review, simp, pr) |
+| `kernels.py` | Kernel functions for each workflow stage (impl, review, pr, rebase) |
 | `checkpoint.py` | Serializable state management for workflow resumption |
+| `state.py` | FSM stage/event contracts and shared workflow context types |
+| `transition.py` | Transition table and fail-fast transition validators |
+| `orchestrator.py` | Flat loop FSM executor using stage handlers and transitions |
 | `__main__.py` | CLI entrypoint with argument parsing |
 | `__init__.py` | Public exports |
 | `continue-prompt.md` | Prompt template for implementation iterations |
+
+### Two-Layer Architecture
+
+The module contains two orchestration layers:
+
+- **Active orchestrator** (`impl.py`): The production runtime. Uses `ImplState` from
+  `checkpoint.py`, drives all workflow execution, and terminates at stage `"done"`.
+- **FSM scaffold** (`state.py` + `transition.py` + `orchestrator.py`): A generic
+  finite-state machine layer that defines stage/event contracts and a transition
+  table. Uses `WorkflowContext` and terminates at stage `"finish"`. The transition
+  table is validated at startup via `validate_transition_table()`, but the scaffold
+  does not drive production execution.
+
+The stage-handler stubs in `kernels.py` (`KERNELS` registry) intentionally return
+`fatal` to prevent unsafe partial wiring of the FSM scaffold.
 
 ## Quick Start
 
@@ -108,8 +126,8 @@ The implementation follows these stages:
 1. **Setup**: Resolve worktree, sync branch, prefetch issue
 2. **Impl** (`impl_kernel`): Generate implementation using AI
 3. **Review** (`review_kernel`): Validate quality (optional, experimental)
-4. **Simp** (`simp_kernel`): Simplify/refine (optional)
-5. **PR** (`pr_kernel`): Create pull request
+4. **PR** (`pr_kernel`): Create pull request with explicit outcome events
+5. **Rebase** (`rebase_kernel`): Recover from rebase-required PR failures
 
 ### State Machine
 
@@ -118,7 +136,11 @@ flowchart LR
     impl --> review
     review -->|passed| pr
     review -->|failed| impl
-    pr --> done[done]
+    pr -->|pr_pass| done[done]
+    pr -->|pr_fail_fixable| impl
+    pr -->|pr_fail_need_rebase| rebase
+    rebase -->|rebase_ok| impl
+    rebase -->|rebase_conflict| fatal[fatal]
 ```
 
 ## Checkpointing
@@ -165,6 +187,7 @@ The refactored implementation maintains full backward compatibility:
 - `_validate_pr_title()` remains at original location for imports
 - `--backend` and `--max-iterations` CLI args work with deprecation warnings
 - Default behavior unchanged (review stage disabled by default)
+- Rebase/fatal branches are explicit and deterministic when review is enabled
 - All existing tests pass without modification
 
 ## Testing
@@ -185,6 +208,9 @@ python -m pytest python/tests/test_impl_pr_title.py
 - `impl.md` — Main implementation documentation
 - `kernels.md` — Kernel function signatures and behaviors
 - `checkpoint.md` — State format and checkpoint API
+- `state.md` — FSM stage/event contracts and workflow context model
+- `transition.md` — Transition mapping and fail-fast validation rules
+- `orchestrator.md` — FSM execution loop and stage logging contract
 - `__init__.md` — Public interface
 - `__main__.md` — CLI documentation
 

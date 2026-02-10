@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sys
 import warnings
+import json
 from pathlib import Path
 from typing import Iterable
 
@@ -347,6 +348,28 @@ def _append_closes_line(finalize_file: Path, issue_no: int) -> None:
     finalize_file.write_text(updated)
 
 
+def _write_fatal_report(
+    tmp_dir: Path,
+    *,
+    stage: str,
+    iteration: int,
+    reason: str,
+    details: str = "",
+) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    report_path = tmp_dir / f"fatal-{timestamp}.json"
+    report = {
+        "stage": stage,
+        "event": "fatal",
+        "iteration": iteration,
+        "reason": reason,
+        "details": details,
+        "timestamp": datetime.now().isoformat(),
+    }
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
+    return report_path
+
+
 def _push_and_create_pr(
     worktree_path: Path,
     issue_no: int,
@@ -629,7 +652,7 @@ def run_impl_workflow(
     *,
     backend: str | None = None,
     max_iterations: int = 10,
-    max_reviews: int = 3,
+    max_reviews: int = 8,
     yolo: bool = False,
     wait_for_ci: bool = False,
     resume: bool = False,
@@ -640,7 +663,7 @@ def run_impl_workflow(
     """Run the issue-to-implementation workflow with kernel-based architecture.
 
     This is the refactored implementation that uses:
-    - Kernel functions for each stage (impl, review, simp, pr)
+    - Kernel functions for each stage (impl, review, pr, rebase)
     - Checkpoint-based state management for resumption
     - State machine orchestration
 
@@ -671,8 +694,26 @@ def run_impl_workflow(
     from agentize.workflow.impl.kernels import (
         impl_kernel,
         pr_kernel,
+        rebase_kernel,
+        run_parse_gate,
         review_kernel,
     )
+    from agentize.workflow.impl.state import (
+        EVENT_IMPL_DONE,
+        EVENT_IMPL_NOT_DONE,
+        EVENT_PARSE_FAIL,
+        EVENT_PR_FAIL_FIXABLE,
+        EVENT_PR_FAIL_NEED_REBASE,
+        EVENT_PR_PASS,
+        EVENT_REBASE_CONFLICT,
+        EVENT_REBASE_OK,
+        EVENT_REVIEW_FAIL,
+        EVENT_REVIEW_PASS,
+    )
+    from agentize.workflow.impl.transition import validate_transition_table
+
+    # Validate explicit FSM transition wiring early.
+    validate_transition_table()
 
     issue_no = _coerce_issue_no(issue_no)
 
@@ -763,8 +804,14 @@ def run_impl_workflow(
 
     # State machine implementation
     review_attempts = 0
+    pr_attempts = 0
+    rebase_attempts = 0
+    parse_fail_streak = 0
+    review_fail_streak = 0
+    last_review_score: int | None = None
+    retry_context: str | None = None
 
-    while state.current_stage != "done":
+    while state.current_stage not in ("done", "fatal"):
         # Save checkpoint before each stage
         save_checkpoint(state, checkpoint_path)
 
@@ -782,7 +829,9 @@ def run_impl_workflow(
                 provider=impl_provider,
                 model=impl_model_name,
                 yolo=yolo,
+                ci_failure=retry_context,
             )
+            retry_context = None
 
             state.last_feedback = feedback
             state.last_score = score
@@ -795,13 +844,62 @@ def run_impl_workflow(
             })
 
             if result.get("completion_found"):
+                parse_passed, parse_feedback, parse_report = run_parse_gate(
+                    state,
+                    files_changed=bool(result.get("files_changed")),
+                )
+                print(parse_feedback)
+                print(f"Parse report: {parse_report}")
+                state.history.append({
+                    "stage": "parse",
+                    "iteration": state.iteration,
+                    "timestamp": datetime.now().isoformat(),
+                    "result": "pass" if parse_passed else "fail",
+                    "score": None,
+                    "artifact": str(parse_report),
+                })
+
+                if not parse_passed:
+                    parse_fail_streak += 1
+                    print(
+                        f"stage=impl event={EVENT_PARSE_FAIL} iter={state.iteration} "
+                        f"reason={parse_feedback}"
+                    )
+                    if parse_fail_streak >= 3:
+                        state.current_stage = "fatal"
+                        state.last_feedback = (
+                            "Reached parse gate retry limit (3 consecutive parse failures)."
+                        )
+                        continue
+                    state.last_feedback = parse_feedback
+                    parse_report_text = parse_report.read_text() if parse_report.exists() else ""
+                    retry_context = (
+                        "Parse gate failure context:\n"
+                        f"{parse_report_text}"
+                    ).strip()
+                    state.current_stage = "impl"
+                    state.iteration += 1
+                    continue
+
+                parse_fail_streak = 0
+
+                print(
+                    f"stage=impl event={EVENT_IMPL_DONE} iter={state.iteration} "
+                    f"reason={parse_feedback}"
+                )
                 if enable_review:
                     state.current_stage = "review"
                     review_attempts = 0
+                    review_fail_streak = 0
+                    last_review_score = None
                 else:
                     # Skip review if disabled
                     state.current_stage = "pr"
             else:
+                print(
+                    f"stage=impl event={EVENT_IMPL_NOT_DONE} iter={state.iteration} "
+                    "reason=completion marker missing"
+                )
                 # Continue to next iteration
                 state.iteration += 1
 
@@ -821,8 +919,11 @@ def run_impl_workflow(
                 session,
                 provider=review_provider,
                 model=review_model_name,
-                threshold=70,
             )
+
+            review_report = tmp_dir / f"review-iter-{state.iteration}.json"
+            if review_report.exists():
+                print(f"Review report: {review_report}")
 
             state.last_feedback = feedback
             state.last_score = score
@@ -835,47 +936,153 @@ def run_impl_workflow(
             })
 
             if passed:
+                review_fail_streak = 0
+                last_review_score = score
+                print(
+                    f"stage=review event={EVENT_REVIEW_PASS} iter={state.iteration} "
+                    f"reason=score {score}"
+                )
                 state.current_stage = "pr"
             else:
                 # Retry implementation with feedback
+                if last_review_score is None or score > last_review_score:
+                    review_fail_streak = 1
+                else:
+                    review_fail_streak += 1
+                last_review_score = score
+
+                if review_fail_streak >= 4:
+                    state.current_stage = "fatal"
+                    state.last_feedback = (
+                        "Review scores showed no improvement for 4 consecutive failures."
+                    )
+                    continue
+
                 print(f"Review failed (score: {score}), retrying with feedback...")
+                print(
+                    f"stage=review event={EVENT_REVIEW_FAIL} iter={state.iteration} "
+                    f"reason=score {score}"
+                )
+                review_report_text = review_report.read_text() if review_report.exists() else ""
+                retry_context = (
+                    "Review failure context:\n"
+                    f"{feedback}\n\n"
+                    f"Structured review report:\n{review_report_text}"
+                ).strip()
                 state.current_stage = "impl"
                 state.iteration += 1
 
         elif state.current_stage == "pr":
-            finalize_file = tmp_dir / "finalize.txt"
+            pr_attempts += 1
+            if pr_attempts > 6:
+                state.current_stage = "fatal"
+                state.last_feedback = "Reached PR retry limit (6 attempts)."
+                continue
 
-            success, message, pr_number, pr_url = pr_kernel(
+            event, message, pr_number, pr_url, pr_report = pr_kernel(
                 state,
                 None,  # Session not needed for PR creation
                 push_remote=push_remote,
                 base_branch=base_branch,
             )
 
+            print(f"PR report: {pr_report}")
+            print(
+                f"stage=pr event={event} iter={state.iteration} "
+                f"reason={message}"
+            )
+
             state.history.append({
                 "stage": "pr",
                 "iteration": state.iteration,
                 "timestamp": datetime.now().isoformat(),
-                "result": "success" if success else "failure",
+                "result": event,
                 "score": None,
+                "artifact": str(pr_report),
             })
 
-            if success:
+            if event == EVENT_PR_PASS:
                 print(f"Issue-{issue_no} implementation is done")
                 print(f"Find the PR at: {message}")
                 state.current_stage = "done"
-            else:
+            elif event == EVENT_PR_FAIL_FIXABLE:
                 print(f"Warning: PR creation issue - {message}", file=sys.stderr)
-                # Continue anyway - user can create manually
-                state.current_stage = "done"
+                pr_report_text = pr_report.read_text() if pr_report.exists() else ""
+                retry_context = (
+                    "PR stage failure context:\n"
+                    f"{message}\n\n"
+                    f"Structured PR report:\n{pr_report_text}"
+                ).strip()
+                state.current_stage = "impl"
+                state.iteration += 1
+            elif event == EVENT_PR_FAIL_NEED_REBASE:
+                print(
+                    "PR stage requires branch rebase before continuing.",
+                    file=sys.stderr,
+                )
+                state.current_stage = "rebase"
+            else:
+                state.current_stage = "fatal"
+                state.last_feedback = f"Unexpected PR event: {event}"
 
             # Save checkpoint with PR info for CI monitoring
             state.pr_number = pr_number
             state.pr_url = pr_url
             save_checkpoint(state, checkpoint_path)
 
+        elif state.current_stage == "rebase":
+            rebase_attempts += 1
+            if rebase_attempts > 3:
+                state.current_stage = "fatal"
+                state.last_feedback = "Reached rebase retry limit (3 attempts)."
+                continue
+
+            event, message, rebase_report = rebase_kernel(
+                state,
+                push_remote=push_remote,
+                base_branch=base_branch,
+            )
+            print(f"Rebase report: {rebase_report}")
+            print(
+                f"stage=rebase event={event} iter={state.iteration} "
+                f"reason={message}"
+            )
+
+            state.history.append({
+                "stage": "rebase",
+                "iteration": state.iteration,
+                "timestamp": datetime.now().isoformat(),
+                "result": event,
+                "score": None,
+                "artifact": str(rebase_report),
+            })
+
+            if event == EVENT_REBASE_OK:
+                state.current_stage = "impl"
+                state.iteration += 1
+            elif event == EVENT_REBASE_CONFLICT:
+                state.current_stage = "fatal"
+                state.last_feedback = message
+            else:
+                state.current_stage = "fatal"
+                state.last_feedback = f"Unexpected rebase event: {event}"
+
         else:
-            raise ImplError(f"Unknown stage: {state.current_stage}")
+            unknown_stage = state.current_stage
+            state.current_stage = "fatal"
+            state.last_feedback = f"Unknown stage: {unknown_stage}"
+
+    if state.current_stage == "fatal":
+        fatal_reason = state.last_feedback or "Fatal stage reached without explicit reason"
+        fatal_report = _write_fatal_report(
+            tmp_dir,
+            stage=state.current_stage,
+            iteration=state.iteration,
+            reason=fatal_reason,
+        )
+        print(f"stage=fatal event=fatal iter={state.iteration} reason={fatal_reason}")
+        print(f"Fatal report: {fatal_report}")
+        raise ImplError(f"Error: Workflow reached fatal state ({fatal_reason})")
 
     # Handle wait_for_ci if enabled
     if wait_for_ci and state.current_stage == "done":

@@ -17,7 +17,7 @@ class ImplState:
     """Serializable workflow state for checkpointing."""
 
     issue_no: int
-    current_stage: Literal["impl", "review", "simp", "pr", "done"]
+    current_stage: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
     iteration: int
     worktree: Path
     plan_file: Path | None

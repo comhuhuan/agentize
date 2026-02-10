@@ -2,19 +2,209 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from agentize.shell import run_shell_function
 from agentize.workflow.api import gh as gh_utils
 from agentize.workflow.api import prompt as prompt_utils
 from agentize.workflow.api.session import PipelineError
+from agentize.workflow.impl.state import (
+    EVENT_FATAL,
+    EVENT_PR_FAIL_FIXABLE,
+    EVENT_PR_FAIL_NEED_REBASE,
+    EVENT_PR_PASS,
+    EVENT_REBASE_CONFLICT,
+    EVENT_REBASE_OK,
+    STAGE_IMPL,
+    STAGE_PR,
+    STAGE_REBASE,
+    STAGE_REVIEW,
+    Event,
+    Stage,
+    StageResult,
+    WorkflowContext,
+)
 
 if TYPE_CHECKING:
     from agentize.workflow.api import Session
     from agentize.workflow.impl.checkpoint import ImplState
+
+
+def _unconfigured_kernel(stage: Stage) -> StageResult:
+    """Return a fatal stage result for a stage without concrete wiring yet."""
+    return StageResult(
+        event=EVENT_FATAL,
+        reason=f"Kernel not configured for stage: {stage}",
+    )
+
+
+def impl_stage_kernel(context: WorkflowContext) -> StageResult:
+    """FSM placeholder kernel for impl stage.
+
+    This stage adapter is intentionally minimal in the first FSM scaffold
+    iteration and is not yet wired to the production impl kernel.
+    """
+    return _unconfigured_kernel(STAGE_IMPL)
+
+
+def review_stage_kernel(context: WorkflowContext) -> StageResult:
+    """FSM placeholder kernel for review stage."""
+    return _unconfigured_kernel(STAGE_REVIEW)
+
+
+def pr_stage_kernel(context: WorkflowContext) -> StageResult:
+    """FSM placeholder kernel for PR stage."""
+    return _unconfigured_kernel(STAGE_PR)
+
+
+def rebase_stage_kernel(context: WorkflowContext) -> StageResult:
+    """FSM placeholder kernel for rebase stage."""
+    return _unconfigured_kernel(STAGE_REBASE)
+
+
+KERNELS: dict[Stage, Callable[[WorkflowContext], StageResult]] = {
+    STAGE_IMPL: impl_stage_kernel,
+    STAGE_REVIEW: review_stage_kernel,
+    STAGE_PR: pr_stage_kernel,
+    STAGE_REBASE: rebase_stage_kernel,
+}
+
+
+REVIEW_SCORE_KEYS: tuple[str, ...] = (
+    "faithful",
+    "style",
+    "docs",
+    "corner_cases",
+)
+
+REVIEW_SCORE_THRESHOLDS: dict[str, int] = {
+    "faithful": 90,
+    "style": 85,
+    "docs": 85,
+    "corner_cases": 85,
+}
+
+
+def _clamp_score(value: int) -> int:
+    return min(100, max(0, value))
+
+
+def _coerce_score(value: object, *, fallback: int) -> int:
+    if isinstance(value, bool):
+        return fallback
+    if isinstance(value, (int, float)):
+        return _clamp_score(int(round(value)))
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return fallback
+        try:
+            return _clamp_score(int(round(float(stripped))))
+        except ValueError:
+            return fallback
+    return fallback
+
+
+def _json_object_candidates(output: str) -> list[str]:
+    candidates: list[str] = []
+    stripped = output.strip()
+    if stripped:
+        candidates.append(stripped)
+
+    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", output, flags=re.DOTALL)
+    candidates.extend(block.strip() for block in fenced if block.strip())
+
+    start = output.find("{")
+    end = output.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(output[start:end + 1].strip())
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
+
+
+def _extract_review_json(output: str) -> dict[str, Any] | None:
+    for candidate in _json_object_candidates(output):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _normalize_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        return normalized
+    if isinstance(value, str):
+        lines = [line.strip().lstrip("- ").strip() for line in value.splitlines()]
+        return [line for line in lines if line]
+    return []
+
+
+def _extract_named_list(output: str, section_name: str) -> list[str]:
+    pattern = re.compile(
+        rf"{section_name}\s*:\s*(.*?)(?:\n\s*[A-Za-z_][A-Za-z0-9_ ]*\s*:|\Z)",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    match = pattern.search(output)
+    if not match:
+        return []
+    return _normalize_list(match.group(1))
+
+
+def _coerce_review_scores(raw: object, *, fallback_score: int) -> dict[str, int]:
+    if isinstance(raw, dict):
+        source = raw
+    else:
+        source = {}
+
+    return {
+        key: _coerce_score(source.get(key), fallback=fallback_score)
+        for key in REVIEW_SCORE_KEYS
+    }
+
+
+def _overall_review_score(
+    review_json: dict[str, Any] | None,
+    *,
+    fallback_score: int,
+    scores: dict[str, int],
+) -> int:
+    if review_json:
+        for key in ("overall_score", "overall", "score"):
+            if key in review_json:
+                return _coerce_score(review_json[key], fallback=fallback_score)
+
+    if fallback_score != 50:
+        return fallback_score
+
+    if not scores:
+        return 0
+
+    return int(round(sum(scores.values()) / len(scores)))
+
+
+def _score_threshold_failures(scores: dict[str, int], thresholds: dict[str, int]) -> list[str]:
+    failures: list[str] = []
+    for key in REVIEW_SCORE_KEYS:
+        threshold = thresholds.get(key, 0)
+        score = scores.get(key, 0)
+        if score < threshold:
+            failures.append(f"{key}={score}<{threshold}")
+    return failures
 
 
 def _parse_quality_score(output: str) -> int:
@@ -93,6 +283,116 @@ def _shell_cmd(parts: list[str | Path]) -> str:
     import shlex
 
     return " ".join(shlex.quote(str(part)) for part in parts)
+
+
+def _latest_commit_python_files(worktree_path: Path) -> list[str]:
+    """Collect Python files changed in the latest commit.
+
+    Args:
+        worktree_path: Path to the git worktree.
+
+    Returns:
+        Sorted list of repository-relative Python file paths that exist.
+
+    Raises:
+        ImplError: If commit diff cannot be determined.
+    """
+    from agentize.workflow.impl.impl import ImplError
+
+    diff_cmd = _shell_cmd(["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"])
+    result = run_shell_function(diff_cmd, capture_output=True, cwd=worktree_path)
+    if result.returncode != 0:
+        raise ImplError("Error: Failed to inspect latest commit for parse gate")
+
+    python_files: list[str] = []
+    for raw_path in result.stdout.splitlines():
+        relative_path = raw_path.strip()
+        if not relative_path.endswith(".py"):
+            continue
+
+        absolute_path = worktree_path / relative_path
+        if absolute_path.exists() and absolute_path.is_file():
+            python_files.append(relative_path)
+
+    return sorted(dict.fromkeys(python_files))
+
+
+def _parse_failed_python_files(py_compile_output: str) -> list[str]:
+    """Extract failed Python file paths from py_compile output."""
+    matches = re.findall(r'File "([^"]+\.py)"', py_compile_output)
+    return sorted(dict.fromkeys(matches))
+
+
+def run_parse_gate(
+    state: ImplState,
+    *,
+    files_changed: bool,
+) -> tuple[bool, str, Path]:
+    """Run deterministic Python parse gate for the current iteration.
+
+    Args:
+        state: Current workflow state.
+        files_changed: Whether current iteration produced a commit.
+
+    Returns:
+        Tuple of (passed, feedback, report_path).
+    """
+    tmp_dir = state.worktree / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    report_path = tmp_dir / f"parse-iter-{state.iteration}.json"
+
+    if not files_changed:
+        report = {
+            "pass": True,
+            "failed_files": [],
+            "traceback": "",
+            "suggestions": ["No Python files changed in this iteration."],
+        }
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+        return True, "Parse gate skipped: no changed Python files.", report_path
+
+    python_files = _latest_commit_python_files(state.worktree)
+    if not python_files:
+        report = {
+            "pass": True,
+            "failed_files": [],
+            "traceback": "",
+            "suggestions": ["No Python files changed in this iteration."],
+        }
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+        return True, "Parse gate passed: no changed Python files.", report_path
+
+    parse_cmd = _shell_cmd(["python", "-m", "py_compile", *python_files])
+    parse_result = run_shell_function(parse_cmd, capture_output=True, cwd=state.worktree)
+
+    traceback_text = parse_result.stderr.strip() or parse_result.stdout.strip()
+    if parse_result.returncode == 0:
+        report = {
+            "pass": True,
+            "failed_files": [],
+            "traceback": "",
+            "suggestions": [],
+        }
+        report_path.write_text(json.dumps(report, indent=2) + "\n")
+        return True, f"Parse gate passed for {len(python_files)} file(s).", report_path
+
+    failed_files = _parse_failed_python_files(traceback_text) or python_files
+    report = {
+        "pass": False,
+        "failed_files": failed_files,
+        "traceback": traceback_text,
+        "suggestions": [
+            "Fix syntax errors in failed files before rerunning implementation.",
+            "Re-run python -m py_compile on changed Python files locally.",
+        ],
+    }
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+    return (
+        False,
+        f"Parse gate failed for {len(failed_files)} file(s). See {report_path}.",
+        report_path,
+    )
 
 
 def _stage_and_commit(
@@ -348,7 +648,6 @@ def review_kernel(
     *,
     provider: str,
     model: str,
-    threshold: int = 70,
 ) -> tuple[bool, str, int]:
     """Review implementation quality and provide feedback.
 
@@ -357,7 +656,6 @@ def review_kernel(
         session: Session for running prompts.
         provider: Model provider.
         model: Model name.
-        threshold: Minimum score to pass review (default 70).
 
     Returns:
         Tuple of (passed, feedback, score) where:
@@ -368,42 +666,42 @@ def review_kernel(
     tmp_dir = state.worktree / ".tmp"
     output_file = tmp_dir / "impl-output.txt"
     issue_file = tmp_dir / f"issue-{state.issue_no}.md"
+    review_report_file = tmp_dir / f"review-iter-{state.iteration}.json"
 
-    # Read the implementation output
     if not output_file.exists():
         return False, "No implementation output found to review", 0
 
     impl_output = output_file.read_text()
     issue_content = issue_file.read_text() if issue_file.exists() else ""
 
-    # Build review prompt
-    review_prompt = f"""Review the following implementation against the issue requirements.
+    review_prompt = f"""Review the following implementation against issue requirements.
 
 Issue Requirements:
 {issue_content}
 
 Implementation:
-{impl_output[:8000]}  # Truncate if too long
+{impl_output[:8000]}
 
-Evaluate on these criteria (0-100 scale for each):
-1. Code correctness and error handling
-2. Test coverage and quality
-3. Documentation completeness
-4. Adherence to project conventions
-5. Issue requirement fulfillment
+Output JSON only with this schema:
+{{
+  "scores": {{
+    "faithful": <0-100 int>,
+    "style": <0-100 int>,
+    "docs": <0-100 int>,
+    "corner_cases": <0-100 int>
+  }},
+  "overall_score": <0-100 int>,
+  "findings": ["..."],
+  "suggestions": ["..."]
+}}
 
-Provide:
-1. Overall Score: X/100
-2. Pass/Fail: (score >= {threshold} is pass)
-3. Feedback: If failed, provide specific actionable feedback for improvement
-4. Suggestions: What needs to be changed to pass
+Scoring constraints:
+- faithful >= 90
+- style >= 85
+- docs >= 85
+- corner_cases >= 85
 
-Format your response as:
-Score: <number>/100
-Passed: <Yes/No>
-Feedback:
-- <point 1>
-- <point 2>
+Be strict and objective. No markdown wrapper.
 """
 
     input_file = tmp_dir / f"review-input-{state.iteration}.txt"
@@ -419,20 +717,67 @@ Feedback:
         )
     except PipelineError as exc:
         print(f"Warning: Review failed ({exc})", file=sys.stderr)
-        # If review fails, assume pass to avoid blocking
-        return True, f"Review pipeline error (assuming pass): {exc}", 75
+        report = {
+            "scores": {key: 0 for key in REVIEW_SCORE_KEYS},
+            "pass": False,
+            "findings": [f"Review pipeline error: {exc}"],
+            "suggestions": ["Retry review stage and inspect model/runtime connectivity."],
+            "raw_output_path": str(review_output_file),
+        }
+        review_report_file.write_text(json.dumps(report, indent=2) + "\n")
+        return False, f"Review pipeline error: {exc}", 0
 
     review_text = result.text() if result.output_path.exists() else ""
-    score = _parse_quality_score(review_text)
-    passed = score >= threshold
+    fallback_score = _parse_quality_score(review_text)
+    review_json = _extract_review_json(review_text)
+    raw_scores: object = {}
+    if review_json:
+        raw_scores = review_json.get("scores")
+        if not isinstance(raw_scores, dict):
+            raw_scores = review_json
 
-    # Extract feedback section
-    feedback = review_text
-    match = re.search(r"[Ff]eedback:?(.*?)(?:\n\n|\Z)", review_text, re.DOTALL)
-    if match:
-        feedback = match.group(1).strip()
+    scores = _coerce_review_scores(raw_scores, fallback_score=fallback_score)
+    threshold_failures = _score_threshold_failures(scores, REVIEW_SCORE_THRESHOLDS)
+    passed = len(threshold_failures) == 0
 
-    return passed, feedback, score
+    findings: list[str] = []
+    suggestions: list[str] = []
+    if review_json:
+        findings = _normalize_list(review_json.get("findings"))
+        suggestions = _normalize_list(review_json.get("suggestions"))
+
+    if not findings:
+        findings = _extract_named_list(review_text, "Findings")
+    if not findings:
+        findings = _extract_named_list(review_text, "Feedback")
+    if not suggestions:
+        suggestions = _extract_named_list(review_text, "Suggestions")
+
+    if not passed and not suggestions:
+        suggestions = [
+            (
+                "Raise review scores to threshold: "
+                + ", ".join(threshold_failures)
+            )
+        ]
+
+    report = {
+        "scores": scores,
+        "pass": passed,
+        "findings": findings,
+        "suggestions": suggestions,
+        "raw_output_path": str(review_output_file),
+    }
+    review_report_file.write_text(json.dumps(report, indent=2) + "\n")
+
+    feedback_points = suggestions or findings
+    feedback = "\n".join(feedback_points).strip() or "No actionable review feedback provided"
+    overall_score = _overall_review_score(
+        review_json,
+        fallback_score=fallback_score,
+        scores=scores,
+    )
+    return passed, feedback, overall_score
 
 
 def simp_kernel(
@@ -570,13 +915,28 @@ def _append_closes_line(finalize_file: Path, issue_no: int) -> None:
     finalize_file.write_text(updated)
 
 
+def _write_stage_report(report_path: Path, report: dict[str, Any]) -> None:
+    report_path.write_text(json.dumps(report, indent=2) + "\n")
+
+
+def _needs_rebase(message: str) -> bool:
+    lowered = message.lower()
+    signatures = (
+        "non-fast-forward",
+        "fetch first",
+        "failed to push some refs",
+        "tip of your current branch is behind",
+    )
+    return any(signature in lowered for signature in signatures)
+
+
 def pr_kernel(
     state: ImplState,
     session: Session | None,
     *,
     push_remote: str | None = None,
     base_branch: str | None = None,
-) -> tuple[bool, str, str | None, str | None]:
+) -> tuple[Event, str, str | None, str | None, Path]:
     """Create pull request for the implementation.
 
     Args:
@@ -586,16 +946,20 @@ def pr_kernel(
         base_branch: Base branch for PR (auto-detected if None).
 
     Returns:
-        Tuple of (success, message, pr_number, pr_url) where:
-        - success: True if PR was created successfully
-        - message: PR URL on success, error message on failure
+        Tuple of (event, message, pr_number, pr_url, report_path) where:
+        - event: PR stage event (`pr_pass`/`pr_fail_fixable`/`pr_fail_need_rebase`)
+        - message: Summary for logs or retry feedback
         - pr_number: PR number as string if created, None otherwise
         - pr_url: Full PR URL if created, None otherwise
+        - report_path: Artifact path for structured PR diagnostics
     """
     from agentize.workflow.impl.impl import ImplError, _validate_pr_title
 
+    _ = session
     tmp_dir = state.worktree / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     finalize_file = tmp_dir / "finalize.txt"
+    report_file = tmp_dir / f"pr-iter-{state.iteration}.json"
 
     # Auto-detect remote and base branch if not provided
     if not push_remote:
@@ -608,13 +972,30 @@ def pr_kernel(
     # Push branch
     cmd_parts: list[str | Path] = ["git", "push", "-u", push_remote, branch_name]
     push_cmd = _shell_cmd(cmd_parts)
-    push_result = run_shell_function(push_cmd, cwd=state.worktree)
+    push_result = run_shell_function(push_cmd, capture_output=True, cwd=state.worktree)
     if push_result.returncode != 0:
-        print(
-            f"Warning: Failed to push branch to {push_remote}",
-            file=sys.stderr,
+        push_output = "\n".join(
+            chunk
+            for chunk in (push_result.stderr.strip(), push_result.stdout.strip())
+            if chunk
         )
-        # Continue anyway, PR might still be creatable
+        event = EVENT_PR_FAIL_NEED_REBASE if _needs_rebase(push_output) else EVENT_PR_FAIL_FIXABLE
+        message = (
+            f"Push rejected before PR creation. {'Rebase required.' if event == EVENT_PR_FAIL_NEED_REBASE else 'Manual fix required.'}"
+        )
+        report = {
+            "event": event,
+            "pass": False,
+            "reason": message,
+            "details": push_output,
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return event, message, None, None, report_file
 
     # Get PR title from finalize file
     pr_title = ""
@@ -627,7 +1008,22 @@ def pr_kernel(
     try:
         _validate_pr_title(pr_title, state.issue_no)
     except ImplError as exc:
-        return False, str(exc), None, None
+        report = {
+            "event": EVENT_PR_FAIL_FIXABLE,
+            "pass": False,
+            "reason": str(exc),
+            "details": "PR title validation failed.",
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_PR_FAIL_FIXABLE, str(exc), None, None, report_file
+
+    if not finalize_file.exists():
+        finalize_file.write_text(f"{pr_title}\n\n")
 
     # Append closes line
     _append_closes_line(finalize_file, state.issue_no)
@@ -642,6 +1038,112 @@ def pr_kernel(
             head=branch_name,
             cwd=state.worktree,
         )
-        return True, pr_url or f"PR #{pr_number} created", pr_number, pr_url
+        message = pr_url or f"PR #{pr_number} created"
+        report = {
+            "event": EVENT_PR_PASS,
+            "pass": True,
+            "reason": message,
+            "details": "",
+            "pr_number": pr_number,
+            "pr_url": pr_url,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_PR_PASS, message, pr_number, pr_url, report_file
     except RuntimeError as exc:
-        return False, f"Failed to create PR: {exc}", None, None
+        message = f"Failed to create PR: {exc}"
+        event = EVENT_PR_FAIL_NEED_REBASE if _needs_rebase(message) else EVENT_PR_FAIL_FIXABLE
+        report = {
+            "event": event,
+            "pass": False,
+            "reason": message,
+            "details": str(exc),
+            "pr_number": None,
+            "pr_url": None,
+            "branch": branch_name,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return event, message, None, None, report_file
+
+
+def rebase_kernel(
+    state: ImplState,
+    *,
+    push_remote: str | None = None,
+    base_branch: str | None = None,
+) -> tuple[Event, str, Path]:
+    """Rebase current branch onto upstream base branch.
+
+    Returns:
+        Tuple of (event, message, report_path) where event is `rebase_ok`
+        or `rebase_conflict`.
+    """
+    tmp_dir = state.worktree / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    report_file = tmp_dir / f"rebase-iter-{state.iteration}.json"
+
+    if not push_remote:
+        push_remote = _detect_push_remote(state.worktree)
+    if not base_branch:
+        base_branch = _detect_base_branch(state.worktree, push_remote)
+
+    fetch_cmd = _shell_cmd(["git", "fetch", push_remote])
+    fetch_result = run_shell_function(fetch_cmd, capture_output=True, cwd=state.worktree)
+    fetch_output = "\n".join(
+        chunk
+        for chunk in (fetch_result.stderr.strip(), fetch_result.stdout.strip())
+        if chunk
+    )
+    if fetch_result.returncode != 0:
+        message = f"Failed to fetch {push_remote}/{base_branch} before rebase."
+        report = {
+            "event": EVENT_REBASE_CONFLICT,
+            "pass": False,
+            "reason": message,
+            "details": fetch_output,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_REBASE_CONFLICT, message, report_file
+
+    rebase_target = f"{push_remote}/{base_branch}"
+    rebase_cmd = _shell_cmd(["git", "rebase", rebase_target])
+    rebase_result = run_shell_function(rebase_cmd, capture_output=True, cwd=state.worktree)
+    rebase_output = "\n".join(
+        chunk
+        for chunk in (rebase_result.stderr.strip(), rebase_result.stdout.strip())
+        if chunk
+    )
+    if rebase_result.returncode == 0:
+        message = f"Rebase completed on {rebase_target}."
+        report = {
+            "event": EVENT_REBASE_OK,
+            "pass": True,
+            "reason": message,
+            "details": rebase_output,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+        }
+        _write_stage_report(report_file, report)
+        return EVENT_REBASE_OK, message, report_file
+
+    run_shell_function(
+        _shell_cmd(["git", "rebase", "--abort"]),
+        cwd=state.worktree,
+    )
+    message = f"Rebase conflict detected while rebasing onto {rebase_target}."
+    report = {
+        "event": EVENT_REBASE_CONFLICT,
+        "pass": False,
+        "reason": message,
+        "details": rebase_output,
+        "push_remote": push_remote,
+        "base_branch": base_branch,
+    }
+    _write_stage_report(report_file, report)
+    return EVENT_REBASE_CONFLICT, message, report_file

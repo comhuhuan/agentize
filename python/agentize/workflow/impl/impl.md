@@ -15,6 +15,10 @@ This design separates concerns:
 - Kernels encapsulate stage-specific logic and are testable in isolation
 - Checkpoint enables recovery from interruptions
 
+The runtime loop is explicit and stage-driven:
+`impl -> review -> pr -> (rebase?) -> finish`, with deterministic `fatal`
+convergence for retry-limit and invalid-state failures.
+
 ## External Interface
 
 ### run_impl_workflow()
@@ -23,14 +27,15 @@ This design separates concerns:
 def run_impl_workflow(
     issue_no: int,
     *,
-    backend: str = "codex:gpt-5.2-codex",
+    backend: str | None = None,
     max_iterations: int = 10,
-    max_reviews: int = 3,
+    max_reviews: int = 8,
     yolo: bool = False,
     wait_for_ci: bool = False,
     resume: bool = False,
     impl_model: str | None = None,
     review_model: str | None = None,
+    enable_review: bool = False,
 ) -> None
 ```
 
@@ -47,25 +52,34 @@ and checkpoint recovery.
 - `resume`: When true, resume from last checkpoint if available.
 - `impl_model`: Model for implementation stage (`provider:model` format).
 - `review_model`: Optional different model for review stage.
+- `enable_review`: Enable the review stage (default: False for compatibility).
 
 **Workflow Stages**:
 
 1. **Setup**: Resolve/create worktree, sync branch, prefetch issue
 2. **Impl**: Generate implementation using AI
 3. **Review**: Validate implementation quality (feedback loop on failure)
-4. **Simp**: Optional simplification stage
-5. **PR**: Create pull request
+4. **PR**: Create pull request with explicit pass/fail event split
+5. **Rebase**: Recover from non-fast-forward push/PR conflicts when possible
 
 **State Machine**:
 
 ```mermaid
 flowchart LR
     setup[setup] --> impl[impl]
+    impl -->|impl_not_done| impl
+    impl -->|parse_fail| impl
+    impl -->|max iterations| fatal[fatal]
     impl --> review[review]
-    review -->|passed| simp[simp]
+    review -->|passed| pr[pr]
     review -->|failed| impl
-    simp --> pr[pr]
-    pr --> done[done]
+    review -->|4x no improvement| fatal
+    pr -->|pr_pass| done[done]
+    pr -->|pr_fail_fixable| impl
+    pr -->|pr_fail_need_rebase| rebase[rebase]
+    pr -->|6x failures| fatal
+    rebase -->|rebase_ok| impl
+    rebase -->|rebase_conflict| fatal
 ```
 
 **Checkpointing**:
@@ -78,10 +92,22 @@ flowchart LR
 - Syncs the issue branch by fetching and rebasing onto the detected default branch.
 - Prefetches issue content via `agentize.workflow.api.gh` into `.tmp/issue-<N>.md`.
 - Runs implementation iterations through `impl_kernel()`.
+- Runs deterministic parse gate (`python -m py_compile`) on latest committed
+  changed Python files before advancing to `review`/`pr`.
 - Validates implementation through `review_kernel()` with feedback loop.
-- Optionally simplifies through `simp_kernel()`.
-- Creates PR through `pr_kernel()` with title validation.
+- Creates PR through `pr_kernel()` with explicit event contract:
+  `pr_pass`, `pr_fail_fixable`, `pr_fail_need_rebase`.
+- Runs `rebase_kernel()` on `pr_fail_need_rebase` and routes by
+  `rebase_ok` / `rebase_conflict`.
 - Optionally monitors CI and re-implements on failures when `wait_for_ci=True`.
+
+**Retry limits and convergence guards**:
+- `max_iterations` bounds impl attempts.
+- `max_reviews` bounds review attempts in one iteration.
+- PR attempts hard-limited to 6.
+- Rebase attempts hard-limited to 3.
+- Consecutive parse failures >= 3 force `fatal`.
+- Consecutive non-improving review failures >= 4 force `fatal`.
 
 **CI Monitoring** (`wait_for_ci=True`):
 After PR creation, monitors mergeability and CI checks:
@@ -150,6 +176,11 @@ of `finalize_file` is used as the PR title and must follow the format:
 - `.tmp/impl-input-base.txt`: Base prompt instructions
 - `.tmp/impl-input-<N>.txt`: Iteration-specific prompt
 - `.tmp/impl-output.txt`: Latest `acw` output
+- `.tmp/parse-iter-<N>.json`: Parse gate report for each completion attempt
+- `.tmp/review-iter-<N>.json`: Structured review score report for each review attempt
+- `.tmp/pr-iter-<N>.json`: Structured PR stage outcome artifact
+- `.tmp/rebase-iter-<N>.json`: Structured rebase stage outcome artifact
+- `.tmp/fatal-<timestamp>.json`: Terminal diagnostic artifact for fatal convergence
 - `.tmp/finalize.txt`: Completion marker and PR title/body
 - `.tmp/impl-checkpoint.json`: Workflow state for resumption
 

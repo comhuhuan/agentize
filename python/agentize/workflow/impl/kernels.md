@@ -45,7 +45,10 @@ def impl_kernel(
     session: Session,
     *,
     template_path: Path,
+    provider: str,
+    model: str,
     yolo: bool = False,
+    ci_failure: str | None = None,
 ) -> tuple[int, str, dict]
 ```
 
@@ -55,7 +58,10 @@ Execute implementation generation for the current iteration.
 - `state`: Current workflow state
 - `session`: Session for running prompts
 - `template_path`: Path to the prompt template file
+- `provider`: Model provider
+- `model`: Model name
 - `yolo`: Pass-through flag for ACW autonomy
+- `ci_failure`: CI failure context for retry iterations
 
 **Returns**:
 - `score`: Self-assessed implementation quality (0-100)
@@ -80,8 +86,8 @@ def review_kernel(
     state: ImplState,
     session: Session,
     *,
-    review_template_path: Path | None = None,
-    threshold: int = 70,
+    provider: str,
+    model: str,
 ) -> tuple[bool, str, int]
 ```
 
@@ -90,8 +96,8 @@ Review implementation quality and provide feedback.
 **Parameters**:
 - `state`: Current workflow state including last implementation
 - `session`: Session for running prompts
-- `review_template_path`: Optional path to review prompt template
-- `threshold`: Minimum score to pass review (default 70)
+- `provider`: Review model provider
+- `model`: Review model name
 
 **Returns**:
 - `passed`: Whether implementation passes quality threshold
@@ -99,17 +105,29 @@ Review implementation quality and provide feedback.
 - `score`: Quality score from 0-100
 
 **Behavior**:
-- Analyzes the last implementation output against the issue requirements
-- Scores code quality, test coverage, documentation completeness
-- Provides actionable feedback for improvements
-- Can trigger re-implementation loop via orchestrator
+- Analyzes the latest implementation output against issue requirements.
+- Requests JSON-first review output with scores for:
+  - `faithful`
+  - `style`
+  - `docs`
+  - `corner_cases`
+- Enforces deterministic thresholds:
+  - `faithful >= 90`
+  - `style >= 85`
+  - `docs >= 85`
+  - `corner_cases >= 85`
+- Writes structured artifact: `.tmp/review-iter-{N}.json`
+- Returns fail with retry feedback when any threshold is not met.
 
-**Review Criteria**:
-- Code correctness and error handling
-- Test coverage and quality
-- Documentation completeness
-- Adherence to project conventions
-- Issue requirement fulfillment
+**Review Artifact** (`.tmp/review-iter-{N}.json`):
+- `scores`: dimension score map
+- `pass`: boolean gate result
+- `findings`: reviewer findings list
+- `suggestions`: actionable retry suggestions
+- `raw_output_path`: source review text path
+
+If review output is non-JSON, the kernel falls back to legacy textual score and
+section parsing to keep the gate deterministic.
 
 ### simp_kernel()
 
@@ -118,7 +136,9 @@ def simp_kernel(
     state: ImplState,
     session: Session,
     *,
-    simp_template_path: Path | None = None,
+    provider: str,
+    model: str,
+    max_files: int = 3,
 ) -> tuple[bool, str]
 ```
 
@@ -126,8 +146,10 @@ Simplify/refine the implementation.
 
 **Parameters**:
 - `state`: Current workflow state
-- `session`: Session for running prompts
-- `simp_template_path`: Optional path to simp prompt template
+- `session`: Session for running prompts (unused, kept for signature consistency)
+- `provider`: Model provider
+- `model`: Model name
+- `max_files`: Maximum files to simplify at once
 
 **Returns**:
 - `passed`: Whether simplification succeeded
@@ -153,7 +175,7 @@ def pr_kernel(
     *,
     push_remote: str | None = None,
     base_branch: str | None = None,
-) -> tuple[bool, str, str | None, str | None]
+) -> tuple[Event, str, str | None, str | None, Path]
 ```
 
 Create pull request for the implementation.
@@ -165,17 +187,43 @@ Create pull request for the implementation.
 - `base_branch`: Base branch for PR (auto-detected if None)
 
 **Returns**:
-- `success`: Whether PR was created successfully
-- `message`: PR URL on success, error message on failure
+- `event`: `pr_pass` / `pr_fail_fixable` / `pr_fail_need_rebase`
+- `message`: Human-readable stage reason
 - `pr_number`: PR number as string if created, None otherwise
 - `pr_url`: Full PR URL if created, None otherwise
+- `report_path`: Path to `.tmp/pr-iter-{N}.json`
 
 **Behavior**:
 - Validates PR title format using `_validate_pr_title()`
 - Pushes branch to remote
 - Creates PR using finalize file content
 - Appends "Closes #N" line if not present
-- Returns PR number and URL for downstream CI monitoring
+- Emits explicit event-based failures (`fixable` vs `need_rebase`)
+- Writes structured artifact: `.tmp/pr-iter-{N}.json`
+
+### rebase_kernel()
+
+```python
+def rebase_kernel(
+    state: ImplState,
+    *,
+    push_remote: str | None = None,
+    base_branch: str | None = None,
+) -> tuple[Event, str, Path]
+```
+
+Rebase current branch onto detected base branch for PR recovery.
+
+**Returns**:
+- `event`: `rebase_ok` or `rebase_conflict`
+- `message`: Stage reason for logs/retry context
+- `report_path`: Path to `.tmp/rebase-iter-{N}.json`
+
+**Behavior**:
+- Runs `git fetch <remote>` before rebase.
+- Runs `git rebase <remote>/<base>`.
+- Calls `git rebase --abort` when conflict occurs.
+- Writes structured artifact for deterministic diagnostics.
 
 **Errors**:
 - Raises `ImplError` if PR title format is invalid
@@ -211,6 +259,27 @@ def _parse_completion_marker(
 
 Returns True if finalize file contains "Issue {N} resolved".
 
+### run_parse_gate()
+
+Run deterministic Python parse validation for the latest implementation
+iteration before entering `review`/`pr`.
+
+```python
+def run_parse_gate(
+    state: ImplState,
+    *,
+    files_changed: bool,
+) -> tuple[bool, str, Path]
+```
+
+Behavior:
+- Writes `.tmp/parse-iter-{N}.json` for every completion attempt.
+- Detects Python files from the latest commit and runs:
+  `python -m py_compile <files...>`.
+- Returns pass/fail status, feedback message, and report path.
+- On failure, report contains failed files, traceback, and suggestions for
+  the next implementation retry.
+
 ## Output Format Conventions
 
 Kernels should produce output that follows these conventions for
@@ -243,3 +312,23 @@ Kernels handle errors at three levels:
 
 The orchestrator decides whether to retry, continue, or abort based on
 kernel return values and the current state.
+
+## FSM Registry Scaffold
+
+`kernels.py` also exposes a stage-handler registry for the explicit FSM layer:
+
+- `impl_stage_kernel(context: WorkflowContext) -> StageResult`
+- `review_stage_kernel(context: WorkflowContext) -> StageResult`
+- `pr_stage_kernel(context: WorkflowContext) -> StageResult`
+- `rebase_stage_kernel(context: WorkflowContext) -> StageResult`
+- `KERNELS: dict[Stage, Callable[[WorkflowContext], StageResult]]`
+
+In the initial scaffold phase these handlers intentionally return a fatal
+`StageResult` to ensure unsafe partial wiring cannot run silently.
+
+## Stage Artifacts
+
+- `.tmp/parse-iter-{N}.json`: Parse gate report
+- `.tmp/review-iter-{N}.json`: Structured review scores and suggestions
+- `.tmp/pr-iter-{N}.json`: PR stage event diagnostics
+- `.tmp/rebase-iter-{N}.json`: Rebase stage event diagnostics
