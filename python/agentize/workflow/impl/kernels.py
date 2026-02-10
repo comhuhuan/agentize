@@ -648,7 +648,6 @@ def review_kernel(
     *,
     provider: str,
     model: str,
-    threshold: int = 70,
 ) -> tuple[bool, str, int]:
     """Review implementation quality and provide feedback.
 
@@ -657,7 +656,6 @@ def review_kernel(
         session: Session for running prompts.
         provider: Model provider.
         model: Model name.
-        threshold: Minimum score to pass review (default 70).
 
     Returns:
         Tuple of (passed, feedback, score) where:
@@ -665,7 +663,6 @@ def review_kernel(
         - feedback: Detailed feedback for re-implementation if failed
         - score: Quality score from 0-100
     """
-    _ = threshold
     tmp_dir = state.worktree / ".tmp"
     output_file = tmp_dir / "impl-output.txt"
     issue_file = tmp_dir / f"issue-{state.issue_no}.md"

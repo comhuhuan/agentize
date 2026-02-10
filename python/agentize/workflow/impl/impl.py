@@ -698,6 +698,18 @@ def run_impl_workflow(
         run_parse_gate,
         review_kernel,
     )
+    from agentize.workflow.impl.state import (
+        EVENT_IMPL_DONE,
+        EVENT_IMPL_NOT_DONE,
+        EVENT_PARSE_FAIL,
+        EVENT_PR_FAIL_FIXABLE,
+        EVENT_PR_FAIL_NEED_REBASE,
+        EVENT_PR_PASS,
+        EVENT_REBASE_CONFLICT,
+        EVENT_REBASE_OK,
+        EVENT_REVIEW_FAIL,
+        EVENT_REVIEW_PASS,
+    )
     from agentize.workflow.impl.transition import validate_transition_table
 
     # Validate explicit FSM transition wiring early.
@@ -850,7 +862,7 @@ def run_impl_workflow(
                 if not parse_passed:
                     parse_fail_streak += 1
                     print(
-                        f"stage=impl event=parse_fail iter={state.iteration} "
+                        f"stage=impl event={EVENT_PARSE_FAIL} iter={state.iteration} "
                         f"reason={parse_feedback}"
                     )
                     if parse_fail_streak >= 3:
@@ -872,7 +884,7 @@ def run_impl_workflow(
                 parse_fail_streak = 0
 
                 print(
-                    f"stage=impl event=impl_done iter={state.iteration} "
+                    f"stage=impl event={EVENT_IMPL_DONE} iter={state.iteration} "
                     f"reason={parse_feedback}"
                 )
                 if enable_review:
@@ -885,7 +897,7 @@ def run_impl_workflow(
                     state.current_stage = "pr"
             else:
                 print(
-                    f"stage=impl event=impl_not_done iter={state.iteration} "
+                    f"stage=impl event={EVENT_IMPL_NOT_DONE} iter={state.iteration} "
                     "reason=completion marker missing"
                 )
                 # Continue to next iteration
@@ -907,7 +919,6 @@ def run_impl_workflow(
                 session,
                 provider=review_provider,
                 model=review_model_name,
-                threshold=70,
             )
 
             review_report = tmp_dir / f"review-iter-{state.iteration}.json"
@@ -928,7 +939,7 @@ def run_impl_workflow(
                 review_fail_streak = 0
                 last_review_score = score
                 print(
-                    f"stage=review event=review_pass iter={state.iteration} "
+                    f"stage=review event={EVENT_REVIEW_PASS} iter={state.iteration} "
                     f"reason=score {score}"
                 )
                 state.current_stage = "pr"
@@ -949,7 +960,7 @@ def run_impl_workflow(
 
                 print(f"Review failed (score: {score}), retrying with feedback...")
                 print(
-                    f"stage=review event=review_fail iter={state.iteration} "
+                    f"stage=review event={EVENT_REVIEW_FAIL} iter={state.iteration} "
                     f"reason=score {score}"
                 )
                 review_report_text = review_report.read_text() if review_report.exists() else ""
@@ -990,11 +1001,11 @@ def run_impl_workflow(
                 "artifact": str(pr_report),
             })
 
-            if event == "pr_pass":
+            if event == EVENT_PR_PASS:
                 print(f"Issue-{issue_no} implementation is done")
                 print(f"Find the PR at: {message}")
                 state.current_stage = "done"
-            elif event == "pr_fail_fixable":
+            elif event == EVENT_PR_FAIL_FIXABLE:
                 print(f"Warning: PR creation issue - {message}", file=sys.stderr)
                 pr_report_text = pr_report.read_text() if pr_report.exists() else ""
                 retry_context = (
@@ -1004,7 +1015,7 @@ def run_impl_workflow(
                 ).strip()
                 state.current_stage = "impl"
                 state.iteration += 1
-            elif event == "pr_fail_need_rebase":
+            elif event == EVENT_PR_FAIL_NEED_REBASE:
                 print(
                     "PR stage requires branch rebase before continuing.",
                     file=sys.stderr,
@@ -1046,10 +1057,10 @@ def run_impl_workflow(
                 "artifact": str(rebase_report),
             })
 
-            if event == "rebase_ok":
+            if event == EVENT_REBASE_OK:
                 state.current_stage = "impl"
                 state.iteration += 1
-            elif event == "rebase_conflict":
+            elif event == EVENT_REBASE_CONFLICT:
                 state.current_stage = "fatal"
                 state.last_feedback = message
             else:

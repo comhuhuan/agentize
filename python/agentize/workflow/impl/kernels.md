@@ -45,7 +45,10 @@ def impl_kernel(
     session: Session,
     *,
     template_path: Path,
+    provider: str,
+    model: str,
     yolo: bool = False,
+    ci_failure: str | None = None,
 ) -> tuple[int, str, dict]
 ```
 
@@ -55,7 +58,10 @@ Execute implementation generation for the current iteration.
 - `state`: Current workflow state
 - `session`: Session for running prompts
 - `template_path`: Path to the prompt template file
+- `provider`: Model provider
+- `model`: Model name
 - `yolo`: Pass-through flag for ACW autonomy
+- `ci_failure`: CI failure context for retry iterations
 
 **Returns**:
 - `score`: Self-assessed implementation quality (0-100)
@@ -82,7 +88,6 @@ def review_kernel(
     *,
     provider: str,
     model: str,
-    threshold: int = 70,
 ) -> tuple[bool, str, int]
 ```
 
@@ -93,7 +98,6 @@ Review implementation quality and provide feedback.
 - `session`: Session for running prompts
 - `provider`: Review model provider
 - `model`: Review model name
-- `threshold`: Legacy compatibility argument (current gate uses fixed per-dimension thresholds)
 
 **Returns**:
 - `passed`: Whether implementation passes quality threshold
@@ -132,7 +136,9 @@ def simp_kernel(
     state: ImplState,
     session: Session,
     *,
-    simp_template_path: Path | None = None,
+    provider: str,
+    model: str,
+    max_files: int = 3,
 ) -> tuple[bool, str]
 ```
 
@@ -140,8 +146,10 @@ Simplify/refine the implementation.
 
 **Parameters**:
 - `state`: Current workflow state
-- `session`: Session for running prompts
-- `simp_template_path`: Optional path to simp prompt template
+- `session`: Session for running prompts (unused, kept for signature consistency)
+- `provider`: Model provider
+- `model`: Model name
+- `max_files`: Maximum files to simplify at once
 
 **Returns**:
 - `passed`: Whether simplification succeeded

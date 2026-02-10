@@ -27,7 +27,7 @@ convergence for retry-limit and invalid-state failures.
 def run_impl_workflow(
     issue_no: int,
     *,
-    backend: str = "codex:gpt-5.2-codex",
+    backend: str | None = None,
     max_iterations: int = 10,
     max_reviews: int = 8,
     yolo: bool = False,
@@ -35,6 +35,7 @@ def run_impl_workflow(
     resume: bool = False,
     impl_model: str | None = None,
     review_model: str | None = None,
+    enable_review: bool = False,
 ) -> None
 ```
 
@@ -51,6 +52,7 @@ and checkpoint recovery.
 - `resume`: When true, resume from last checkpoint if available.
 - `impl_model`: Model for implementation stage (`provider:model` format).
 - `review_model`: Optional different model for review stage.
+- `enable_review`: Enable the review stage (default: False for compatibility).
 
 **Workflow Stages**:
 
@@ -65,14 +67,19 @@ and checkpoint recovery.
 ```mermaid
 flowchart LR
     setup[setup] --> impl[impl]
+    impl -->|impl_not_done| impl
+    impl -->|parse_fail| impl
+    impl -->|max iterations| fatal[fatal]
     impl --> review[review]
     review -->|passed| pr[pr]
     review -->|failed| impl
+    review -->|4x no improvement| fatal
     pr -->|pr_pass| done[done]
     pr -->|pr_fail_fixable| impl
     pr -->|pr_fail_need_rebase| rebase[rebase]
+    pr -->|6x failures| fatal
     rebase -->|rebase_ok| impl
-    rebase -->|rebase_conflict| fatal[fatal]
+    rebase -->|rebase_conflict| fatal
 ```
 
 **Checkpointing**:

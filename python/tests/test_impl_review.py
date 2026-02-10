@@ -48,7 +48,6 @@ class TestReviewKernel:
             mock_session,
             provider="codex",
             model="gpt-5",
-            threshold=70,
         )
 
         assert passed is True
@@ -91,7 +90,6 @@ class TestReviewKernel:
             mock_session,
             provider="codex",
             model="gpt-5",
-            threshold=70,
         )
 
         assert passed is False
@@ -128,7 +126,6 @@ Suggestions:
             mock_session,
             provider="codex",
             model="gpt-5",
-            threshold=70,
         )
 
         assert passed is False

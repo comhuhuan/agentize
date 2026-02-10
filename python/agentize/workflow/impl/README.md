@@ -57,6 +57,21 @@ flowchart TB
 | `__init__.py` | Public exports |
 | `continue-prompt.md` | Prompt template for implementation iterations |
 
+### Two-Layer Architecture
+
+The module contains two orchestration layers:
+
+- **Active orchestrator** (`impl.py`): The production runtime. Uses `ImplState` from
+  `checkpoint.py`, drives all workflow execution, and terminates at stage `"done"`.
+- **FSM scaffold** (`state.py` + `transition.py` + `orchestrator.py`): A generic
+  finite-state machine layer that defines stage/event contracts and a transition
+  table. Uses `WorkflowContext` and terminates at stage `"finish"`. The transition
+  table is validated at startup via `validate_transition_table()`, but the scaffold
+  does not drive production execution.
+
+The stage-handler stubs in `kernels.py` (`KERNELS` registry) intentionally return
+`fatal` to prevent unsafe partial wiring of the FSM scaffold.
+
 ## Quick Start
 
 ### Basic Usage
