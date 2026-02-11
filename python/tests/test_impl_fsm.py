@@ -1,4 +1,4 @@
-"""Tests for impl FSM scaffold modules (state, transition, orchestrator)."""
+"""Tests for impl FSM modules (state, transition, orchestrator, stage kernels)."""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,7 +19,13 @@ from agentize.workflow.impl.state import (
     EVENT_FATAL,
     EVENT_IMPL_DONE,
     EVENT_IMPL_NOT_DONE,
+    EVENT_PARSE_FAIL,
+    EVENT_PR_FAIL_FIXABLE,
+    EVENT_PR_FAIL_NEED_REBASE,
     EVENT_PR_PASS,
+    EVENT_REBASE_CONFLICT,
+    EVENT_REBASE_OK,
+    EVENT_REVIEW_FAIL,
     EVENT_REVIEW_PASS,
     STAGE_FATAL,
     STAGE_FINISH,
@@ -183,7 +189,7 @@ class TestOrchestrator:
 
 
 class TestKernelRegistry:
-    """Tests for FSM kernel registry scaffold."""
+    """Tests for FSM kernel registry."""
 
     def test_registry_has_expected_stage_handlers(self):
         assert KERNELS[STAGE_IMPL] is impl_stage_kernel
@@ -191,12 +197,280 @@ class TestKernelRegistry:
         assert KERNELS[STAGE_PR] is pr_stage_kernel
         assert KERNELS[STAGE_REBASE] is rebase_stage_kernel
 
-    def test_placeholder_kernels_return_fatal_event(self):
+
+class TestPreStepHook:
+    """Tests for pre_step_hook parameter on run_fsm_orchestrator."""
+
+    def test_pre_step_hook_called_before_each_dispatch(self):
         context = WorkflowContext(plan="p", upstream_instruction="u")
-        for kernel in (impl_stage_kernel, review_stage_kernel, pr_stage_kernel, rebase_stage_kernel):
-            result = kernel(context)
-            assert result.event == EVENT_FATAL
-            assert "Kernel not configured" in (result.reason or "")
+        hook_calls: list[str] = []
+        call_count = {"n": 0}
+
+        def hook(ctx: WorkflowContext) -> None:
+            hook_calls.append(ctx.current_stage)
+
+        def impl_kernel(_ctx: WorkflowContext) -> StageResult:
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                return StageResult(event=EVENT_IMPL_DONE, reason="done")
+            return StageResult(event=EVENT_IMPL_NOT_DONE, reason="iterate")
+
+        def review_kernel(_ctx: WorkflowContext) -> StageResult:
+            return StageResult(event=EVENT_REVIEW_PASS, reason="ok")
+
+        def pr_kernel(_ctx: WorkflowContext) -> StageResult:
+            return StageResult(event=EVENT_PR_PASS, reason="ok")
+
+        kernels = {
+            STAGE_IMPL: impl_kernel,
+            STAGE_REVIEW: review_kernel,
+            STAGE_PR: pr_kernel,
+        }
+
+        run_fsm_orchestrator(
+            context,
+            kernels=kernels,
+            logger=lambda _: None,
+            pre_step_hook=hook,
+        )
+
+        # Hook should be called 4 times: 2x impl, 1x review, 1x pr
+        assert len(hook_calls) == 4
+        assert hook_calls[0] == STAGE_IMPL
+        assert hook_calls[1] == STAGE_IMPL
+        assert hook_calls[2] == STAGE_REVIEW
+        assert hook_calls[3] == STAGE_PR
+
+
+def _make_impl_context(tmp_path: Path, **overrides) -> WorkflowContext:
+    """Helper to build a WorkflowContext with standard impl_state and data."""
+    state = create_initial_state(857, tmp_path)
+    data = {
+        "impl_state": state,
+        "session": None,
+        "template_path": Path("/dev/null"),
+        "impl_provider": "test",
+        "impl_model": "test-model",
+        "review_provider": "test",
+        "review_model": "test-model",
+        "yolo": False,
+        "enable_review": False,
+        "max_iterations": 10,
+        "max_reviews": 8,
+        "push_remote": "origin",
+        "base_branch": "main",
+        "checkpoint_path": tmp_path / "checkpoint.json",
+        "parse_fail_streak": 0,
+        "review_fail_streak": 0,
+        "last_review_score": None,
+        "retry_context": None,
+        "review_attempts": 0,
+        "pr_attempts": 0,
+        "rebase_attempts": 0,
+    }
+    data.update(overrides)
+    return WorkflowContext(plan="", upstream_instruction="", data=data)
+
+
+class TestImplStageKernel:
+    """Tests for impl_stage_kernel."""
+
+    def test_completion_and_parse_pass_returns_impl_done(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path)
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.impl_kernel",
+            lambda state, session, **kw: (85, "done", {"completion_found": True, "files_changed": True}),
+        )
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.run_parse_gate",
+            lambda state, files_changed: (True, "Parse ok", tmp_path / "parse.json"),
+        )
+
+        result = impl_stage_kernel(context)
+        assert result.event == EVENT_IMPL_DONE
+
+    def test_no_completion_returns_impl_not_done(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path)
+        state = context.data["impl_state"]
+        initial_iter = state.iteration
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.impl_kernel",
+            lambda state, session, **kw: (50, "wip", {"completion_found": False, "files_changed": False}),
+        )
+
+        result = impl_stage_kernel(context)
+        assert result.event == EVENT_IMPL_NOT_DONE
+        assert state.iteration == initial_iter + 1
+
+    def test_completion_parse_fail_returns_parse_fail(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path)
+        parse_report = tmp_path / ".tmp" / "parse.json"
+        parse_report.parent.mkdir(parents=True, exist_ok=True)
+        parse_report.write_text('{"pass": false}')
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.impl_kernel",
+            lambda state, session, **kw: (80, "done", {"completion_found": True, "files_changed": True}),
+        )
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.run_parse_gate",
+            lambda state, files_changed: (False, "Parse failed", parse_report),
+        )
+
+        result = impl_stage_kernel(context)
+        assert result.event == EVENT_PARSE_FAIL
+        assert context.data["parse_fail_streak"] == 1
+
+    def test_parse_fail_streak_3_returns_fatal(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path, parse_fail_streak=2)
+        parse_report = tmp_path / ".tmp" / "parse.json"
+        parse_report.parent.mkdir(parents=True, exist_ok=True)
+        parse_report.write_text('{"pass": false}')
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.impl_kernel",
+            lambda state, session, **kw: (80, "done", {"completion_found": True, "files_changed": True}),
+        )
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.run_parse_gate",
+            lambda state, files_changed: (False, "Parse failed", parse_report),
+        )
+
+        result = impl_stage_kernel(context)
+        assert result.event == EVENT_FATAL
+        assert "parse" in result.reason.lower()
+
+    def test_max_iterations_returns_fatal(self, tmp_path: Path):
+        context = _make_impl_context(tmp_path, max_iterations=5)
+        context.data["impl_state"].iteration = 6
+
+        result = impl_stage_kernel(context)
+        assert result.event == EVENT_FATAL
+        assert "Max iteration" in result.reason
+
+
+class TestReviewStageKernel:
+    """Tests for review_stage_kernel."""
+
+    def test_review_disabled_returns_review_pass(self, tmp_path: Path):
+        context = _make_impl_context(tmp_path, enable_review=False)
+
+        result = review_stage_kernel(context)
+        assert result.event == EVENT_REVIEW_PASS
+        assert "disabled" in result.reason
+
+    def test_review_passes_returns_review_pass(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path, enable_review=True)
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.review_kernel",
+            lambda state, session, **kw: (True, "All good", 92),
+        )
+
+        result = review_stage_kernel(context)
+        assert result.event == EVENT_REVIEW_PASS
+        assert "92" in result.reason
+
+    def test_review_fails_returns_review_fail(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path, enable_review=True)
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.review_kernel",
+            lambda state, session, **kw: (False, "Needs work", 60),
+        )
+
+        result = review_stage_kernel(context)
+        assert result.event == EVENT_REVIEW_FAIL
+        assert context.data.get("retry_context") is not None
+
+    def test_convergence_4x_non_improving_returns_fatal(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(
+            tmp_path,
+            enable_review=True,
+            review_fail_streak=3,
+            last_review_score=70,
+        )
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.review_kernel",
+            lambda state, session, **kw: (False, "Still bad", 60),
+        )
+
+        result = review_stage_kernel(context)
+        assert result.event == EVENT_FATAL
+        assert "no improvement" in result.reason.lower()
+
+    def test_max_reviews_returns_review_pass(self, tmp_path: Path):
+        context = _make_impl_context(tmp_path, enable_review=True, review_attempts=8, max_reviews=8)
+
+        result = review_stage_kernel(context)
+        assert result.event == EVENT_REVIEW_PASS
+        assert "max" in result.reason.lower()
+
+
+class TestPrStageKernel:
+    """Tests for pr_stage_kernel."""
+
+    def test_pr_pass_passthrough(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path)
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.pr_kernel",
+            lambda state, session, **kw: (EVENT_PR_PASS, "PR created", "123", "http://pr", tmp_path / "pr.json"),
+        )
+
+        result = pr_stage_kernel(context)
+        assert result.event == EVENT_PR_PASS
+        assert context.data["impl_state"].pr_number == "123"
+
+    def test_pr_fail_fixable_sets_retry_context(self, tmp_path: Path, monkeypatch):
+        pr_report = tmp_path / "pr.json"
+        pr_report.write_text('{"event": "pr_fail_fixable"}')
+
+        context = _make_impl_context(tmp_path)
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.pr_kernel",
+            lambda state, session, **kw: (EVENT_PR_FAIL_FIXABLE, "Title invalid", None, None, pr_report),
+        )
+
+        result = pr_stage_kernel(context)
+        assert result.event == EVENT_PR_FAIL_FIXABLE
+        assert context.data.get("retry_context") is not None
+
+    def test_pr_attempts_7_returns_fatal(self, tmp_path: Path):
+        context = _make_impl_context(tmp_path, pr_attempts=6)
+
+        result = pr_stage_kernel(context)
+        assert result.event == EVENT_FATAL
+        assert "PR retry limit" in result.reason
+
+
+class TestRebaseStageKernel:
+    """Tests for rebase_stage_kernel."""
+
+    def test_rebase_ok_passthrough(self, tmp_path: Path, monkeypatch):
+        context = _make_impl_context(tmp_path)
+        state = context.data["impl_state"]
+        initial_iter = state.iteration
+
+        monkeypatch.setattr(
+            "agentize.workflow.impl.kernels.rebase_kernel",
+            lambda state, **kw: (EVENT_REBASE_OK, "Rebased", tmp_path / "rebase.json"),
+        )
+
+        result = rebase_stage_kernel(context)
+        assert result.event == EVENT_REBASE_OK
+        assert state.iteration == initial_iter + 1
+
+    def test_rebase_attempts_4_returns_fatal(self, tmp_path: Path):
+        context = _make_impl_context(tmp_path, rebase_attempts=3)
+
+        result = rebase_stage_kernel(context)
+        assert result.event == EVENT_FATAL
+        assert "rebase retry limit" in result.reason.lower()
 
 
 class TestParseGate:

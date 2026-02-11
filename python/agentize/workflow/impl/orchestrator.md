@@ -10,9 +10,12 @@ table, and exits only at terminal states.
 
 ## Core API
 
-- `run_fsm_orchestrator(context, kernels, logger=print, max_steps=200)`
+- `run_fsm_orchestrator(context, kernels, logger=print, max_steps=200, pre_step_hook=None)`
 - `OrchestratorError` (reserved for explicit orchestration runtime failures)
 - `StageHandler` / `KernelRegistry` type aliases
+
+The optional `pre_step_hook` callback is invoked before each stage dispatch,
+receiving the current `WorkflowContext`. Primary use case: checkpoint saves.
 
 ## Runtime Behavior
 
@@ -30,4 +33,10 @@ On each loop iteration:
 - Invalid transition/event resolution causes deterministic transition to
   `fatal` with diagnostic `fatal_reason`.
 - `max_steps` guard prevents accidental infinite loops.
+
+## Production Usage
+
+`run_fsm_orchestrator()` is the production runtime loop for `impl.py`.
+Stage kernels are registered in `KERNELS` (kernels.py) and dispatch is
+governed by `TRANSITIONS` (transition.py).
 

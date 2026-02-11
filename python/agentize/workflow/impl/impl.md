@@ -133,16 +133,22 @@ The orchestrator uses `ImplState` from `checkpoint.py` to track:
 
 ### Kernel Integration
 
-Kernels are called by the orchestrator based on current stage:
+The orchestrator dispatches to stage kernels via `run_fsm_orchestrator()`:
 
 ```python
-if state.current_stage == "impl":
-    score, feedback, result = impl_kernel(state, session, ...)
-    # Update state, save checkpoint
-elif state.current_stage == "review":
-    passed, feedback, score = review_kernel(state, session, ...)
-    # Update state, retry or continue, save checkpoint
+context = WorkflowContext(plan="", upstream_instruction="", data={
+    "impl_state": state, "session": session, ...
+})
+run_fsm_orchestrator(
+    context,
+    kernels=KERNELS,
+    pre_step_hook=lambda ctx: save_checkpoint(ctx.data["impl_state"], checkpoint_path),
+)
 ```
+
+Each stage kernel extracts dependencies from `context.data`, calls the production
+kernel, and returns a `StageResult` with the appropriate event. The transition table
+determines the next stage.
 
 ### Backward Compatibility
 

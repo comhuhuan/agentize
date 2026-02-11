@@ -57,20 +57,17 @@ flowchart TB
 | `__init__.py` | Public exports |
 | `continue-prompt.md` | Prompt template for implementation iterations |
 
-### Two-Layer Architecture
+### FSM Dispatch Architecture
 
-The module contains two orchestration layers:
+Production execution is driven by `run_fsm_orchestrator()` in `orchestrator.py`.
+The orchestrator reads the current stage, calls the corresponding kernel from
+`KERNELS` in `kernels.py`, receives a `StageResult` with an event, and resolves
+the next stage via the `TRANSITIONS` table in `transition.py`.
 
-- **Active orchestrator** (`impl.py`): The production runtime. Uses `ImplState` from
-  `checkpoint.py`, drives all workflow execution, and terminates at stage `"done"`.
-- **FSM scaffold** (`state.py` + `transition.py` + `orchestrator.py`): A generic
-  finite-state machine layer that defines stage/event contracts and a transition
-  table. Uses `WorkflowContext` and terminates at stage `"finish"`. The transition
-  table is validated at startup via `validate_transition_table()`, but the scaffold
-  does not drive production execution.
-
-The stage-handler stubs in `kernels.py` (`KERNELS` registry) intentionally return
-`fatal` to prevent unsafe partial wiring of the FSM scaffold.
+`ImplState` from `checkpoint.py` is packed into `WorkflowContext.data["impl_state"]`
+and serves as the authoritative workflow state. Stage kernels mutate `ImplState`
+directly for iteration tracking, history, and checkpoint data. The orchestrator's
+`pre_step_hook` saves checkpoints before each stage dispatch.
 
 ## Quick Start
 
@@ -115,7 +112,6 @@ passed, feedback, score = review_kernel(
     session,
     provider="codex",
     model="gpt-5",
-    threshold=75,
 )
 ```
 
@@ -225,9 +221,11 @@ python -m pytest python/tests/test_impl_pr_title.py
 
 ### Adding a New Stage
 
-1. Add stage name to `ImplState.current_stage` Literal type
-2. Add stage handler in `run_impl_workflow()` state machine
-3. Update checkpoint documentation
+1. Add stage/event constants to `state.py`
+2. Add transition edges to `transition.py` and update `required_pairs`
+3. Implement stage kernel in `kernels.py` and register in `KERNELS`
+4. Add stage name to `ImplState.current_stage` Literal type if needed
+5. Update checkpoint documentation
 
 ## Future Work
 

@@ -34,6 +34,7 @@ def run_fsm_orchestrator(
     kernels: KernelRegistry,
     logger: Callable[[str], None] = print,
     max_steps: int = 200,
+    pre_step_hook: Callable[[WorkflowContext], None] | None = None,
 ) -> WorkflowContext:
     """Run a flat FSM loop until `finish` or `fatal` stage is reached."""
     step = 0
@@ -45,6 +46,9 @@ def run_fsm_orchestrator(
             context.final_status = "fatal"
             context.fatal_reason = f"Max FSM steps exceeded: {max_steps}"
             break
+
+        if pre_step_hook is not None:
+            pre_step_hook(context)
 
         handler = kernels.get(context.current_stage)
         if handler is None:
