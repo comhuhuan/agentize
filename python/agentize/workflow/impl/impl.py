@@ -457,196 +457,6 @@ def _parse_max_iterations(value: int | str) -> int:
 import shlex
 
 
-def _run_impl_workflow_legacy(
-    issue_no: int,
-    *,
-    backend: str = "codex:gpt-5.2-codex",
-    max_iterations: int = 10,
-    yolo: bool = False,
-    wait_for_ci: bool = False,
-) -> None:
-    """Original monolithic implementation (kept for reference).
-
-    This is the original implementation before kernel-based refactoring.
-    It is kept for backward compatibility and as a fallback.
-    """
-    issue_no = _coerce_issue_no(issue_no)
-    provider, model = _parse_backend(backend)
-    max_iterations = _parse_max_iterations(max_iterations)
-
-    worktree_result = run_shell_function(
-        _shell_cmd(["wt", "pathto", str(issue_no)]),
-        capture_output=True,
-    )
-    worktree_path = worktree_result.stdout.strip() if worktree_result.returncode == 0 else ""
-
-    if not worktree_path:
-        print(f"Creating worktree for issue {issue_no}...")
-        spawn_result = run_shell_function(
-            _shell_cmd(["wt", "spawn", str(issue_no), "--no-agent"])
-        )
-        if spawn_result.returncode != 0:
-            raise ImplError(f"Error: Failed to create worktree for issue {issue_no}")
-        worktree_result = run_shell_function(
-            _shell_cmd(["wt", "pathto", str(issue_no)]),
-            capture_output=True,
-        )
-        worktree_path = worktree_result.stdout.strip()
-        if not worktree_path:
-            raise ImplError("Error: Failed to get worktree path after spawn")
-    else:
-        print(f"Using existing worktree for issue {issue_no} at {worktree_path}")
-
-    worktree = Path(worktree_path)
-    push_remote, base_branch = _sync_branch(worktree)
-    tmp_dir = worktree / ".tmp"
-    tmp_dir.mkdir(parents=True, exist_ok=True)
-
-    issue_file = tmp_dir / f"issue-{issue_no}.md"
-    base_input_file = tmp_dir / "impl-input-base.txt"
-    output_file = tmp_dir / "impl-output.txt"
-    finalize_file = tmp_dir / "finalize.txt"
-
-    session = Session(output_dir=tmp_dir, prefix=f"impl-{issue_no}")
-
-    _prefetch_issue(issue_no, issue_file, cwd=worktree)
-
-    template_path = rel_path("continue-prompt.md")
-    template = _read_template(template_path)
-    _validate_placeholders(template)
-    render_prompt(
-        template_path,
-        issue_no=issue_no,
-        issue_file=issue_file,
-        finalize_file=finalize_file,
-        dest_path=base_input_file,
-    )
-
-    def run_iteration(iteration: int, *, ci_failure: str | None = None) -> bool:
-        print(f"Iteration {iteration}/{max_iterations}...")
-        input_file = tmp_dir / f"impl-input-{iteration}.txt"
-
-        previous_output = _read_optional(output_file)
-        prev_commit_report = None
-        if iteration > 1:
-            prev_commit_report = _read_optional(
-                tmp_dir / f"commit-report-iter-{iteration - 1}.txt"
-            )
-
-        prompt_text = render_prompt(
-            template_path,
-            issue_no=issue_no,
-            issue_file=issue_file,
-            finalize_file=finalize_file,
-            iteration=iteration,
-            previous_output=previous_output,
-            previous_commit_report=prev_commit_report,
-            ci_failure=ci_failure,
-            dest_path=input_file,
-        )
-
-        extra_flags = ["--yolo"] if yolo else None
-        try:
-            session.run_prompt(
-                f"impl-iter-{iteration}",
-                prompt_text,
-                (provider, model),
-                extra_flags=extra_flags,
-                input_path=input_file,
-                output_path=output_file,
-            )
-        except PipelineError as exc:
-            print(
-                f"Warning: acw failed on iteration {iteration} ({exc})",
-                file=sys.stderr,
-            )
-
-        completion_found = _completion_marker_present(finalize_file, issue_no)
-
-        commit_report_file = tmp_dir / f"commit-report-iter-{iteration}.txt"
-        commit_report = _read_optional(commit_report_file)
-        if not commit_report:
-            if completion_found:
-                raise ImplError(
-                    f"Error: Missing commit report for iteration {iteration}\n"
-                    f"Expected: {commit_report_file}"
-                )
-            print(
-                f"Warning: Missing commit report for iteration {iteration}; skipping commit.",
-                file=sys.stderr,
-            )
-            return completion_found
-
-        _stage_and_commit(worktree, commit_report_file, iteration)
-
-        if completion_found:
-            print("Completion marker found!")
-        return completion_found
-
-    completion_found = False
-    last_iteration = 0
-    for iteration in range(1, max_iterations + 1):
-        last_iteration = iteration
-        completion_found = run_iteration(iteration)
-        if completion_found:
-            break
-
-    if not completion_found:
-        raise ImplError(
-            f"Error: Max iteration limit ({max_iterations}) reached without completion marker\n"
-            f"To continue, increase --max-iterations or create {finalize_file} with "
-            f"'Issue {issue_no} resolved'"
-        )
-
-    pr_number, pr_url, branch_name = _push_and_create_pr(
-        worktree,
-        issue_no,
-        finalize_file,
-        push_remote=push_remote,
-        base_branch=base_branch,
-    )
-
-    if wait_for_ci:
-        if not pr_number:
-            raise ImplError("Error: Failed to determine PR number for CI monitoring")
-        next_iteration = last_iteration + 1
-        while True:
-            _wait_for_pr_mergeable(
-                worktree,
-                str(pr_number),
-                push_remote=push_remote,
-            )
-            print("Waiting for PR CI...")
-            exit_code, checks = gh_utils.pr_checks(
-                pr_number,
-                watch=True,
-                interval=30,
-                cwd=worktree,
-            )
-            if exit_code == 0:
-                break
-            if next_iteration > max_iterations:
-                raise ImplError(
-                    f"Error: Max iteration limit ({max_iterations}) reached while fixing CI\n"
-                    f"Last PR status: failing checks"
-                )
-            ci_failure = _format_ci_failure_context(pr_url, checks)
-            print("CI checks failed. Running fix iteration...")
-            run_iteration(next_iteration, ci_failure=ci_failure)
-            _push_branch(
-                worktree,
-                push_remote=push_remote,
-                branch_name=branch_name,
-            )
-            next_iteration += 1
-
-    if pr_url:
-        print(f"Issue-{issue_no} implementation is done")
-        print(f"Find the PR at: {pr_url}")
-    else:
-        print(f"Issue-{issue_no} implementation is done")
-
-
 def run_impl_workflow(
     issue_no: int,
     *,
@@ -685,30 +495,17 @@ def run_impl_workflow(
     """
     # Import here to avoid circular imports
     from agentize.workflow.impl.checkpoint import (
-        ImplState,
         checkpoint_exists,
         create_initial_state,
         load_checkpoint,
         save_checkpoint,
     )
-    from agentize.workflow.impl.kernels import (
-        impl_kernel,
-        pr_kernel,
-        rebase_kernel,
-        run_parse_gate,
-        review_kernel,
-    )
+    from agentize.workflow.impl.kernels import KERNELS, impl_kernel
+    from agentize.workflow.impl.orchestrator import run_fsm_orchestrator
     from agentize.workflow.impl.state import (
-        EVENT_IMPL_DONE,
-        EVENT_IMPL_NOT_DONE,
-        EVENT_PARSE_FAIL,
-        EVENT_PR_FAIL_FIXABLE,
-        EVENT_PR_FAIL_NEED_REBASE,
-        EVENT_PR_PASS,
-        EVENT_REBASE_CONFLICT,
-        EVENT_REBASE_OK,
-        EVENT_REVIEW_FAIL,
-        EVENT_REVIEW_PASS,
+        STAGE_FATAL,
+        STAGE_FINISH,
+        WorkflowContext,
     )
     from agentize.workflow.impl.transition import validate_transition_table
 
@@ -802,292 +599,70 @@ def run_impl_workflow(
     template = _read_template(template_path)
     _validate_placeholders(template)
 
-    # State machine implementation
-    review_attempts = 0
-    pr_attempts = 0
-    rebase_attempts = 0
-    parse_fail_streak = 0
-    review_fail_streak = 0
-    last_review_score: int | None = None
-    retry_context: str | None = None
+    # Build WorkflowContext with all dependencies packed into data
+    context = WorkflowContext(
+        plan="",
+        upstream_instruction="",
+        current_stage=state.current_stage,
+        data={
+            "impl_state": state,
+            "session": session,
+            "template_path": template_path,
+            "impl_provider": impl_provider,
+            "impl_model": impl_model_name,
+            "review_provider": review_provider,
+            "review_model": review_model_name,
+            "yolo": yolo,
+            "enable_review": enable_review,
+            "max_iterations": max_iterations,
+            "max_reviews": max_reviews,
+            "push_remote": push_remote,
+            "base_branch": base_branch,
+            "checkpoint_path": checkpoint_path,
+            "parse_fail_streak": 0,
+            "review_fail_streak": 0,
+            "last_review_score": None,
+            "retry_context": None,
+            "review_attempts": 0,
+            "pr_attempts": 0,
+            "rebase_attempts": 0,
+        },
+    )
 
-    while state.current_stage not in ("done", "fatal"):
-        # Save checkpoint before each stage
-        save_checkpoint(state, checkpoint_path)
+    # Checkpoint hook: save state before each FSM step
+    def _checkpoint_hook(ctx: WorkflowContext) -> None:
+        save_checkpoint(ctx.data["impl_state"], checkpoint_path)
 
-        if state.current_stage == "impl":
-            if state.iteration > max_iterations:
-                raise ImplError(
-                    f"Error: Max iteration limit ({max_iterations}) reached\n"
-                    f"Checkpoint saved at: {checkpoint_path}"
-                )
+    # Run FSM orchestrator
+    context = run_fsm_orchestrator(
+        context,
+        kernels=KERNELS,
+        pre_step_hook=_checkpoint_hook,
+    )
 
-            score, feedback, result = impl_kernel(
-                state,
-                session,
-                template_path=template_path,
-                provider=impl_provider,
-                model=impl_model_name,
-                yolo=yolo,
-                ci_failure=retry_context,
-            )
-            retry_context = None
-
-            state.last_feedback = feedback
-            state.last_score = score
-            state.history.append({
-                "stage": "impl",
-                "iteration": state.iteration,
-                "timestamp": datetime.now().isoformat(),
-                "result": "success" if result.get("completion_found") else "incomplete",
-                "score": score,
-            })
-
-            if result.get("completion_found"):
-                parse_passed, parse_feedback, parse_report = run_parse_gate(
-                    state,
-                    files_changed=bool(result.get("files_changed")),
-                )
-                print(parse_feedback)
-                print(f"Parse report: {parse_report}")
-                state.history.append({
-                    "stage": "parse",
-                    "iteration": state.iteration,
-                    "timestamp": datetime.now().isoformat(),
-                    "result": "pass" if parse_passed else "fail",
-                    "score": None,
-                    "artifact": str(parse_report),
-                })
-
-                if not parse_passed:
-                    parse_fail_streak += 1
-                    print(
-                        f"stage=impl event={EVENT_PARSE_FAIL} iter={state.iteration} "
-                        f"reason={parse_feedback}"
-                    )
-                    if parse_fail_streak >= 3:
-                        state.current_stage = "fatal"
-                        state.last_feedback = (
-                            "Reached parse gate retry limit (3 consecutive parse failures)."
-                        )
-                        continue
-                    state.last_feedback = parse_feedback
-                    parse_report_text = parse_report.read_text() if parse_report.exists() else ""
-                    retry_context = (
-                        "Parse gate failure context:\n"
-                        f"{parse_report_text}"
-                    ).strip()
-                    state.current_stage = "impl"
-                    state.iteration += 1
-                    continue
-
-                parse_fail_streak = 0
-
-                print(
-                    f"stage=impl event={EVENT_IMPL_DONE} iter={state.iteration} "
-                    f"reason={parse_feedback}"
-                )
-                if enable_review:
-                    state.current_stage = "review"
-                    review_attempts = 0
-                    review_fail_streak = 0
-                    last_review_score = None
-                else:
-                    # Skip review if disabled
-                    state.current_stage = "pr"
-            else:
-                print(
-                    f"stage=impl event={EVENT_IMPL_NOT_DONE} iter={state.iteration} "
-                    "reason=completion marker missing"
-                )
-                # Continue to next iteration
-                state.iteration += 1
-
-        elif state.current_stage == "review":
-            review_attempts += 1
-            if review_attempts > max_reviews:
-                print(
-                    f"Warning: Max review attempts ({max_reviews}) reached, "
-                    "proceeding to PR",
-                    file=sys.stderr,
-                )
-                state.current_stage = "pr"
-                continue
-
-            passed, feedback, score = review_kernel(
-                state,
-                session,
-                provider=review_provider,
-                model=review_model_name,
-            )
-
-            review_report = tmp_dir / f"review-iter-{state.iteration}.json"
-            if review_report.exists():
-                print(f"Review report: {review_report}")
-
-            state.last_feedback = feedback
-            state.last_score = score
-            state.history.append({
-                "stage": "review",
-                "iteration": state.iteration,
-                "timestamp": datetime.now().isoformat(),
-                "result": "pass" if passed else "retry",
-                "score": score,
-            })
-
-            if passed:
-                review_fail_streak = 0
-                last_review_score = score
-                print(
-                    f"stage=review event={EVENT_REVIEW_PASS} iter={state.iteration} "
-                    f"reason=score {score}"
-                )
-                state.current_stage = "pr"
-            else:
-                # Retry implementation with feedback
-                if last_review_score is None or score > last_review_score:
-                    review_fail_streak = 1
-                else:
-                    review_fail_streak += 1
-                last_review_score = score
-
-                if review_fail_streak >= 4:
-                    state.current_stage = "fatal"
-                    state.last_feedback = (
-                        "Review scores showed no improvement for 4 consecutive failures."
-                    )
-                    continue
-
-                print(f"Review failed (score: {score}), retrying with feedback...")
-                print(
-                    f"stage=review event={EVENT_REVIEW_FAIL} iter={state.iteration} "
-                    f"reason=score {score}"
-                )
-                review_report_text = review_report.read_text() if review_report.exists() else ""
-                retry_context = (
-                    "Review failure context:\n"
-                    f"{feedback}\n\n"
-                    f"Structured review report:\n{review_report_text}"
-                ).strip()
-                state.current_stage = "impl"
-                state.iteration += 1
-
-        elif state.current_stage == "pr":
-            pr_attempts += 1
-            if pr_attempts > 6:
-                state.current_stage = "fatal"
-                state.last_feedback = "Reached PR retry limit (6 attempts)."
-                continue
-
-            event, message, pr_number, pr_url, pr_report = pr_kernel(
-                state,
-                None,  # Session not needed for PR creation
-                push_remote=push_remote,
-                base_branch=base_branch,
-            )
-
-            print(f"PR report: {pr_report}")
-            print(
-                f"stage=pr event={event} iter={state.iteration} "
-                f"reason={message}"
-            )
-
-            state.history.append({
-                "stage": "pr",
-                "iteration": state.iteration,
-                "timestamp": datetime.now().isoformat(),
-                "result": event,
-                "score": None,
-                "artifact": str(pr_report),
-            })
-
-            if event == EVENT_PR_PASS:
-                print(f"Issue-{issue_no} implementation is done")
-                print(f"Find the PR at: {message}")
-                state.current_stage = "done"
-            elif event == EVENT_PR_FAIL_FIXABLE:
-                print(f"Warning: PR creation issue - {message}", file=sys.stderr)
-                pr_report_text = pr_report.read_text() if pr_report.exists() else ""
-                retry_context = (
-                    "PR stage failure context:\n"
-                    f"{message}\n\n"
-                    f"Structured PR report:\n{pr_report_text}"
-                ).strip()
-                state.current_stage = "impl"
-                state.iteration += 1
-            elif event == EVENT_PR_FAIL_NEED_REBASE:
-                print(
-                    "PR stage requires branch rebase before continuing.",
-                    file=sys.stderr,
-                )
-                state.current_stage = "rebase"
-            else:
-                state.current_stage = "fatal"
-                state.last_feedback = f"Unexpected PR event: {event}"
-
-            # Save checkpoint with PR info for CI monitoring
-            state.pr_number = pr_number
-            state.pr_url = pr_url
-            save_checkpoint(state, checkpoint_path)
-
-        elif state.current_stage == "rebase":
-            rebase_attempts += 1
-            if rebase_attempts > 3:
-                state.current_stage = "fatal"
-                state.last_feedback = "Reached rebase retry limit (3 attempts)."
-                continue
-
-            event, message, rebase_report = rebase_kernel(
-                state,
-                push_remote=push_remote,
-                base_branch=base_branch,
-            )
-            print(f"Rebase report: {rebase_report}")
-            print(
-                f"stage=rebase event={event} iter={state.iteration} "
-                f"reason={message}"
-            )
-
-            state.history.append({
-                "stage": "rebase",
-                "iteration": state.iteration,
-                "timestamp": datetime.now().isoformat(),
-                "result": event,
-                "score": None,
-                "artifact": str(rebase_report),
-            })
-
-            if event == EVENT_REBASE_OK:
-                state.current_stage = "impl"
-                state.iteration += 1
-            elif event == EVENT_REBASE_CONFLICT:
-                state.current_stage = "fatal"
-                state.last_feedback = message
-            else:
-                state.current_stage = "fatal"
-                state.last_feedback = f"Unexpected rebase event: {event}"
-
-        else:
-            unknown_stage = state.current_stage
-            state.current_stage = "fatal"
-            state.last_feedback = f"Unknown stage: {unknown_stage}"
-
-    if state.current_stage == "fatal":
-        fatal_reason = state.last_feedback or "Fatal stage reached without explicit reason"
+    # Map terminal stage back to ImplState
+    if context.current_stage == STAGE_FINISH:
+        state.current_stage = "done"
+        print(f"Issue-{issue_no} implementation is done")
+        if state.pr_url:
+            print(f"Find the PR at: {state.pr_url}")
+    elif context.current_stage == STAGE_FATAL:
+        state.current_stage = "fatal"
+        fatal_reason = context.fatal_reason or state.last_feedback or "Fatal stage reached"
         fatal_report = _write_fatal_report(
             tmp_dir,
-            stage=state.current_stage,
+            stage="fatal",
             iteration=state.iteration,
             reason=fatal_reason,
         )
-        print(f"stage=fatal event=fatal iter={state.iteration} reason={fatal_reason}")
         print(f"Fatal report: {fatal_report}")
+        save_checkpoint(state, checkpoint_path)
         raise ImplError(f"Error: Workflow reached fatal state ({fatal_reason})")
 
     # Handle wait_for_ci if enabled
     if wait_for_ci and state.current_stage == "done":
-        pr_number = getattr(state, "pr_number", None)
-        pr_url = getattr(state, "pr_url", None)
+        pr_number = state.pr_number
+        pr_url = state.pr_url
 
         if not pr_number:
             raise ImplError("Error: Failed to determine PR number for CI monitoring")
@@ -1096,7 +671,6 @@ def run_impl_workflow(
         next_iteration = state.iteration + 1
 
         while True:
-            # Check mergeability and handle conflicts
             _wait_for_pr_mergeable(
                 worktree,
                 str(pr_number),
@@ -1115,18 +689,15 @@ def run_impl_workflow(
                 print("All CI checks passed!")
                 break
 
-            # CI failed - check iteration limit
             if next_iteration > max_iterations:
                 raise ImplError(
                     f"Error: Max iteration limit ({max_iterations}) reached while fixing CI\n"
                     f"Last PR status: failing checks"
                 )
 
-            # Format failure context and run fix iteration
             ci_failure = _format_ci_failure_context(pr_url, checks)
             print("CI checks failed. Running fix iteration...")
 
-            # Run implementation iteration with CI failure context
             score, feedback, result = impl_kernel(
                 state,
                 session,
@@ -1150,7 +721,6 @@ def run_impl_workflow(
 
             save_checkpoint(state, checkpoint_path)
 
-            # Push the fix
             _push_branch(
                 worktree,
                 push_remote=push_remote,

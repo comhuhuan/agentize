@@ -14,11 +14,16 @@ from agentize.workflow.api import prompt as prompt_utils
 from agentize.workflow.api.session import PipelineError
 from agentize.workflow.impl.state import (
     EVENT_FATAL,
+    EVENT_IMPL_DONE,
+    EVENT_IMPL_NOT_DONE,
+    EVENT_PARSE_FAIL,
     EVENT_PR_FAIL_FIXABLE,
     EVENT_PR_FAIL_NEED_REBASE,
     EVENT_PR_PASS,
     EVENT_REBASE_CONFLICT,
     EVENT_REBASE_OK,
+    EVENT_REVIEW_FAIL,
+    EVENT_REVIEW_PASS,
     STAGE_IMPL,
     STAGE_PR,
     STAGE_REBASE,
@@ -34,36 +39,260 @@ if TYPE_CHECKING:
     from agentize.workflow.impl.checkpoint import ImplState
 
 
-def _unconfigured_kernel(stage: Stage) -> StageResult:
-    """Return a fatal stage result for a stage without concrete wiring yet."""
-    return StageResult(
-        event=EVENT_FATAL,
-        reason=f"Kernel not configured for stage: {stage}",
-    )
-
-
 def impl_stage_kernel(context: WorkflowContext) -> StageResult:
-    """FSM placeholder kernel for impl stage.
+    """FSM stage kernel for impl stage.
 
-    This stage adapter is intentionally minimal in the first FSM scaffold
-    iteration and is not yet wired to the production impl kernel.
+    Calls impl_kernel(), runs parse gate on completion, tracks
+    parse_fail_streak, and emits the appropriate event.
     """
-    return _unconfigured_kernel(STAGE_IMPL)
+    from datetime import datetime
+
+    state: ImplState = context.data["impl_state"]
+    session = context.data["session"]
+    template_path = context.data["template_path"]
+    impl_provider = context.data["impl_provider"]
+    impl_model = context.data["impl_model"]
+    yolo = context.data.get("yolo", False)
+    max_iterations = context.data.get("max_iterations", 10)
+    enable_review = context.data.get("enable_review", False)
+
+    if state.iteration > max_iterations:
+        return StageResult(
+            event=EVENT_FATAL,
+            reason=f"Max iteration limit ({max_iterations}) reached",
+        )
+
+    score, feedback, result = impl_kernel(
+        state,
+        session,
+        template_path=template_path,
+        provider=impl_provider,
+        model=impl_model,
+        yolo=yolo,
+        ci_failure=context.data.get("retry_context"),
+    )
+    context.data["retry_context"] = None
+
+    state.last_feedback = feedback
+    state.last_score = score
+    state.history.append({
+        "stage": "impl",
+        "iteration": state.iteration,
+        "timestamp": datetime.now().isoformat(),
+        "result": "success" if result.get("completion_found") else "incomplete",
+        "score": score,
+    })
+
+    if result.get("completion_found"):
+        parse_passed, parse_feedback, parse_report = run_parse_gate(
+            state,
+            files_changed=bool(result.get("files_changed")),
+        )
+        print(parse_feedback)
+        print(f"Parse report: {parse_report}")
+        state.history.append({
+            "stage": "parse",
+            "iteration": state.iteration,
+            "timestamp": datetime.now().isoformat(),
+            "result": "pass" if parse_passed else "fail",
+            "score": None,
+            "artifact": str(parse_report),
+        })
+
+        if not parse_passed:
+            context.data["parse_fail_streak"] = context.data.get("parse_fail_streak", 0) + 1
+            if context.data["parse_fail_streak"] >= 3:
+                return StageResult(
+                    event=EVENT_FATAL,
+                    reason="Reached parse gate retry limit (3 consecutive parse failures).",
+                )
+            state.last_feedback = parse_feedback
+            parse_report_text = parse_report.read_text() if parse_report.exists() else ""
+            context.data["retry_context"] = (
+                "Parse gate failure context:\n"
+                f"{parse_report_text}"
+            ).strip()
+            state.iteration += 1
+            return StageResult(event=EVENT_PARSE_FAIL, reason=parse_feedback)
+
+        context.data["parse_fail_streak"] = 0
+        if enable_review:
+            context.data["review_attempts"] = 0
+            context.data["review_fail_streak"] = 0
+            context.data["last_review_score"] = None
+        return StageResult(event=EVENT_IMPL_DONE, reason=parse_feedback)
+
+    # No completion found
+    state.iteration += 1
+    return StageResult(event=EVENT_IMPL_NOT_DONE, reason="completion marker missing")
 
 
 def review_stage_kernel(context: WorkflowContext) -> StageResult:
-    """FSM placeholder kernel for review stage."""
-    return _unconfigured_kernel(STAGE_REVIEW)
+    """FSM stage kernel for review stage.
+
+    Handles enable_review=False shortcut, calls review_kernel(),
+    tracks convergence via review_fail_streak, and emits the appropriate event.
+    """
+    from datetime import datetime
+
+    state: ImplState = context.data["impl_state"]
+    enable_review = context.data.get("enable_review", False)
+    max_reviews = context.data.get("max_reviews", 8)
+
+    if not enable_review:
+        return StageResult(event=EVENT_REVIEW_PASS, reason="review disabled")
+
+    context.data["review_attempts"] = context.data.get("review_attempts", 0) + 1
+    if context.data["review_attempts"] > max_reviews:
+        return StageResult(
+            event=EVENT_REVIEW_PASS,
+            reason=f"Max review attempts ({max_reviews}) reached, proceeding to PR",
+        )
+
+    session = context.data["session"]
+    review_provider = context.data["review_provider"]
+    review_model_name = context.data["review_model"]
+
+    passed, feedback, score = review_kernel(
+        state,
+        session,
+        provider=review_provider,
+        model=review_model_name,
+    )
+
+    tmp_dir = state.worktree / ".tmp"
+    review_report = tmp_dir / f"review-iter-{state.iteration}.json"
+    if review_report.exists():
+        print(f"Review report: {review_report}")
+
+    state.last_feedback = feedback
+    state.last_score = score
+    state.history.append({
+        "stage": "review",
+        "iteration": state.iteration,
+        "timestamp": datetime.now().isoformat(),
+        "result": "pass" if passed else "retry",
+        "score": score,
+    })
+
+    if passed:
+        context.data["review_fail_streak"] = 0
+        context.data["last_review_score"] = score
+        return StageResult(event=EVENT_REVIEW_PASS, reason=f"score {score}")
+
+    # Track convergence
+    last_review_score = context.data.get("last_review_score")
+    if last_review_score is None or score > last_review_score:
+        context.data["review_fail_streak"] = 1
+    else:
+        context.data["review_fail_streak"] = context.data.get("review_fail_streak", 0) + 1
+    context.data["last_review_score"] = score
+
+    if context.data.get("review_fail_streak", 0) >= 4:
+        return StageResult(
+            event=EVENT_FATAL,
+            reason="Review scores showed no improvement for 4 consecutive failures.",
+        )
+
+    review_report_text = review_report.read_text() if review_report.exists() else ""
+    context.data["retry_context"] = (
+        "Review failure context:\n"
+        f"{feedback}\n\n"
+        f"Structured review report:\n{review_report_text}"
+    ).strip()
+    state.iteration += 1
+    return StageResult(event=EVENT_REVIEW_FAIL, reason=f"score {score}")
 
 
 def pr_stage_kernel(context: WorkflowContext) -> StageResult:
-    """FSM placeholder kernel for PR stage."""
-    return _unconfigured_kernel(STAGE_PR)
+    """FSM stage kernel for PR stage.
+
+    Calls pr_kernel(), passes through event, tracks pr_attempts (limit 6).
+    """
+    from datetime import datetime
+
+    state: ImplState = context.data["impl_state"]
+    push_remote = context.data.get("push_remote")
+    base_branch = context.data.get("base_branch")
+
+    context.data["pr_attempts"] = context.data.get("pr_attempts", 0) + 1
+    if context.data["pr_attempts"] > 6:
+        return StageResult(
+            event=EVENT_FATAL,
+            reason="Reached PR retry limit (6 attempts).",
+        )
+
+    event, message, pr_number, pr_url, pr_report = pr_kernel(
+        state,
+        None,
+        push_remote=push_remote,
+        base_branch=base_branch,
+    )
+
+    print(f"PR report: {pr_report}")
+
+    state.history.append({
+        "stage": "pr",
+        "iteration": state.iteration,
+        "timestamp": datetime.now().isoformat(),
+        "result": event,
+        "score": None,
+        "artifact": str(pr_report),
+    })
+
+    state.pr_number = pr_number
+    state.pr_url = pr_url
+
+    if event == EVENT_PR_FAIL_FIXABLE:
+        pr_report_text = pr_report.read_text() if pr_report.exists() else ""
+        context.data["retry_context"] = (
+            "PR stage failure context:\n"
+            f"{message}\n\n"
+            f"Structured PR report:\n{pr_report_text}"
+        ).strip()
+        state.iteration += 1
+
+    return StageResult(event=event, reason=message)
 
 
 def rebase_stage_kernel(context: WorkflowContext) -> StageResult:
-    """FSM placeholder kernel for rebase stage."""
-    return _unconfigured_kernel(STAGE_REBASE)
+    """FSM stage kernel for rebase stage.
+
+    Calls rebase_kernel(), passes through event, tracks rebase_attempts (limit 3).
+    """
+    from datetime import datetime
+
+    state: ImplState = context.data["impl_state"]
+    push_remote = context.data.get("push_remote")
+    base_branch = context.data.get("base_branch")
+
+    context.data["rebase_attempts"] = context.data.get("rebase_attempts", 0) + 1
+    if context.data["rebase_attempts"] > 3:
+        return StageResult(
+            event=EVENT_FATAL,
+            reason="Reached rebase retry limit (3 attempts).",
+        )
+
+    event, message, rebase_report = rebase_kernel(
+        state,
+        push_remote=push_remote,
+        base_branch=base_branch,
+    )
+    print(f"Rebase report: {rebase_report}")
+
+    state.history.append({
+        "stage": "rebase",
+        "iteration": state.iteration,
+        "timestamp": datetime.now().isoformat(),
+        "result": event,
+        "score": None,
+        "artifact": str(rebase_report),
+    })
+
+    if event == EVENT_REBASE_OK:
+        state.iteration += 1
+
+    return StageResult(event=event, reason=message)
 
 
 KERNELS: dict[Stage, Callable[[WorkflowContext], StageResult]] = {

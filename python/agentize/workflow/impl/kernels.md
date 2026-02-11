@@ -313,18 +313,23 @@ Kernels handle errors at three levels:
 The orchestrator decides whether to retry, continue, or abort based on
 kernel return values and the current state.
 
-## FSM Registry Scaffold
+## FSM Stage Kernels
 
-`kernels.py` also exposes a stage-handler registry for the explicit FSM layer:
+`kernels.py` exposes the production stage-handler registry:
 
-- `impl_stage_kernel(context: WorkflowContext) -> StageResult`
-- `review_stage_kernel(context: WorkflowContext) -> StageResult`
-- `pr_stage_kernel(context: WorkflowContext) -> StageResult`
-- `rebase_stage_kernel(context: WorkflowContext) -> StageResult`
+- `impl_stage_kernel(context)`: Calls `impl_kernel()`, runs parse gate, tracks
+  `parse_fail_streak`, emits `EVENT_IMPL_DONE`/`EVENT_IMPL_NOT_DONE`/`EVENT_PARSE_FAIL`/`EVENT_FATAL`
+- `review_stage_kernel(context)`: Handles `enable_review=False` → `EVENT_REVIEW_PASS`,
+  calls `review_kernel()`, tracks convergence via `review_fail_streak`, emits
+  `EVENT_REVIEW_PASS`/`EVENT_REVIEW_FAIL`/`EVENT_FATAL`
+- `pr_stage_kernel(context)`: Calls `pr_kernel()`, passes through event, tracks
+  `pr_attempts` (limit 6), emits `EVENT_PR_PASS`/`EVENT_PR_FAIL_*`/`EVENT_FATAL`
+- `rebase_stage_kernel(context)`: Calls `rebase_kernel()`, passes through event,
+  tracks `rebase_attempts` (limit 3), emits `EVENT_REBASE_OK`/`EVENT_REBASE_CONFLICT`/`EVENT_FATAL`
 - `KERNELS: dict[Stage, Callable[[WorkflowContext], StageResult]]`
 
-In the initial scaffold phase these handlers intentionally return a fatal
-`StageResult` to ensure unsafe partial wiring cannot run silently.
+Stage kernels extract `ImplState` and dependencies from `context.data` and mutate
+`ImplState` directly for iteration, history, and feedback tracking.
 
 ## Stage Artifacts
 
