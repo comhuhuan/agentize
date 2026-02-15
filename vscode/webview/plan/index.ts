@@ -4,12 +4,32 @@ import type { PlanImplMessage, PlanToggleImplCollapseMessage } from './types';
 declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
 
 (() => {
-  const vscode = acquireVsCodeApi();
+  const statusEl = document.getElementById('plan-skeleton-status');
+  if (statusEl) {
+    statusEl.textContent = 'Webview script executing...';
+  }
+
+  let vscode: { postMessage(message: unknown): void } | undefined;
+  try {
+    vscode = acquireVsCodeApi();
+  } catch (error) {
+    if (statusEl) {
+      statusEl.textContent = `Failed to initialize VS Code webview API: ${String(error)}`;
+    }
+    return;
+  }
   const MAX_LOG_LINES = 1000;
 
   const root = document.getElementById('plan-root');
   if (!root) {
+    if (statusEl) {
+      statusEl.textContent = 'Missing #plan-root element in webview HTML.';
+    }
     return;
+  }
+
+  if (statusEl) {
+    statusEl.textContent = 'Rendering webview UI...';
   }
 
   root.innerHTML = `
@@ -27,6 +47,8 @@ declare function acquireVsCodeApi(): { postMessage(message: unknown): void };
     </div>
     <div id="session-list" class="session-list"></div>
   `;
+
+  vscode.postMessage({ type: 'webview/ready' });
 
   const newPlanButton = document.getElementById('new-plan');
   const inputPanel = document.getElementById('plan-input');

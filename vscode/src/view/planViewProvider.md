@@ -40,6 +40,18 @@ Builds the webview HTML with CSP, script/style URIs, and initial state injection
 The provider loads the compiled webview script `webview/plan/out/index.js` (built from
 `webview/plan/index.ts`) because webviews execute JavaScript only.
 
+The HTML includes a small static skeleton inside `#plan-root` so the view never appears
+as a totally blank panel when scripts fail to load or are blocked. The provider also
+checks for the presence of compiled webview assets on disk and emits diagnostic output
+to the extension OutputChannel when they are missing.
+
+The webview script is loaded via a tiny inline bootloader so the view can surface
+`onerror` and other runtime errors in the skeleton status line rather than failing
+silently.
+
+The initial state blob escapes `<`, `U+2028`, and `U+2029` to keep the inline bootstrap
+script resilient to user-provided content stored in the session state.
+
 ### handleRunEvent(event: RunEvent)
 Transforms runner events into state updates and UI updates (status changes and log lines).
 Plan events update `status` and `logs`; implementation events update `implStatus` and `implLogs`.

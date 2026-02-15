@@ -28,6 +28,43 @@ body {
   gap: 16px;
 }
 
+.plan-skeleton {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.plan-skeleton-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.plan-skeleton-subtitle {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.plan-skeleton-error {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  color: var(--error);
+  font-size: 13px;
+}
+
+.plan-skeleton code {
+  font-family: "Fira Mono", "Consolas", monospace;
+  font-size: 12px;
+  background: rgba(15, 110, 110, 0.08);
+  padding: 2px 6px;
+  border-radius: 6px;
+  color: var(--accent);
+}
+
 .toolbar {
   display: flex;
   justify-content: flex-start;

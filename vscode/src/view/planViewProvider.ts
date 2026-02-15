@@ -32,10 +32,13 @@ export class PlanViewProvider implements vscode.WebviewViewProvider {
     private readonly extensionUri: vscode.Uri,
     private readonly store: SessionStore,
     private readonly runner: PlanRunner,
+    private readonly output: vscode.OutputChannel,
   ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
+
+    this.output.appendLine(`[planView] resolveWebviewView: extensionUri=${this.extensionUri.toString()}`);
 
     view.webview.options = {
       enableScripts: true,
@@ -59,6 +62,10 @@ export class PlanViewProvider implements vscode.WebviewViewProvider {
 
   private handleMessage(message: IncomingMessage): void {
     switch (message.type) {
+      case 'webview/ready': {
+        this.output.appendLine('[planView] webview ready');
+        return;
+      }
       case 'plan/new': {
         const prompt = message.prompt?.trim() ?? '';
         if (!prompt) {
@@ -462,21 +469,87 @@ export class PlanViewProvider implements vscode.WebviewViewProvider {
     const scriptUri = webview.asWebviewUri(scriptPath);
     const styleUri = webview.asWebviewUri(stylePath);
     const nonce = this.getNonce();
-    const initialState = JSON.stringify(this.store.getAppState()).replace(/</g, '\\u003c');
+    const scriptFsPath = path.join(this.extensionUri.fsPath, 'webview', 'plan', 'out', 'index.js');
+    const styleFsPath = path.join(this.extensionUri.fsPath, 'webview', 'plan', 'styles.css');
+    const hasScript = fs.existsSync(scriptFsPath);
+    const hasStyle = fs.existsSync(styleFsPath);
+
+    if (!hasScript || !hasStyle) {
+      this.output.appendLine(
+        `[planView] missing webview assets: script=${hasScript ? 'ok' : scriptFsPath} style=${hasStyle ? 'ok' : styleFsPath}`,
+      );
+    }
+
+    let initialState = '{}';
+    try {
+      initialState = JSON.stringify(this.store.getAppState())
+        .replace(/</g, '\\u003c')
+        .replace(/\u2028/g, '\\u2028')
+        .replace(/\u2029/g, '\\u2029');
+    } catch (error) {
+      this.output.appendLine(`[planView] failed to serialize initial state: ${String(error)}`);
+    }
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} https: data:; font-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'nonce-${nonce}';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="${styleUri}" rel="stylesheet" />
   <title>Agentize</title>
 </head>
 <body>
-  <div id="plan-root" class="plan-root"></div>
+  <div id="plan-root" class="plan-root">
+    <div class="plan-skeleton">
+      <div class="plan-skeleton-title">Agentize</div>
+      <div id="plan-skeleton-status" class="plan-skeleton-subtitle">Loading webview UI...</div>
+      ${hasScript && hasStyle ? '' : '<div class="plan-skeleton-error">Webview assets missing. Run <code>make vscode-plugin</code> and reload VS Code.</div>'}
+    </div>
+  </div>
   <script nonce="${nonce}">window.__INITIAL_STATE__ = ${initialState};</script>
-  <script nonce="${nonce}" src="${scriptUri}"></script>
+  <script nonce="${nonce}">
+    (function() {
+      const statusEl = document.getElementById('plan-skeleton-status');
+      const initialStatus = statusEl ? statusEl.textContent : '';
+      const setStatus = (text) => {
+        if (statusEl) statusEl.textContent = text;
+      };
+      const setStatusIfUnchanged = (text) => {
+        if (!statusEl) return;
+        if (statusEl.textContent === initialStatus) {
+          statusEl.textContent = text;
+        }
+      };
+
+      window.addEventListener('error', (event) => {
+        const message = event && event.message ? event.message : 'Unknown error';
+        setStatus('Webview error: ' + message);
+      });
+
+      window.addEventListener('unhandledrejection', (event) => {
+        let reason = 'Unknown rejection';
+        if (event && event.reason) {
+          try { reason = String(event.reason); } catch (_) {}
+        }
+        setStatus('Webview rejection: ' + reason);
+      });
+
+      const script = document.createElement('script');
+      script.src = "${scriptUri}";
+      script.type = "module";
+      script.nonce = "${nonce}";
+      script.onload = () => {
+        // Don't overwrite a more specific status written by the webview code.
+        setStatusIfUnchanged('Webview script loaded; waiting for init...');
+        setTimeout(() => {
+          setStatusIfUnchanged('Webview script loaded but did not initialize.');
+        }, 2000);
+      };
+      script.onerror = () => setStatus('Failed to load webview script.');
+      document.body.appendChild(script);
+    })();
+  </script>
 </body>
 </html>`;
   }

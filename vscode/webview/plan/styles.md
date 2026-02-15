@@ -6,6 +6,7 @@ Minimal readable styles for the Plan webview UI.
 
 ### Layout Classes
 - `.plan-root`: top-level layout container.
+- `.plan-skeleton`, `.plan-skeleton-title`, `.plan-skeleton-subtitle`, `.plan-skeleton-error`: static boot UI rendered before the webview script hydrates.
 - `.toolbar`: header actions for New Plan.
 - `.session`: container for a single plan session.
 - `.session-header`: row with title, status, and actions.
