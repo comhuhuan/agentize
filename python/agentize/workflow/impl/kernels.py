@@ -313,6 +313,9 @@ def simp_stage_kernel(context: WorkflowContext) -> StageResult:
     if not enable_simp:
         return StageResult(event=EVENT_SIMP_PASS, reason="simp disabled")
 
+    # simp_attempts is a global lifetime cap (not per-cycle). Unlike
+    # review_attempts which resets each iteration, simplification retries
+    # accumulate across all round-trips through the FSM.
     context.data["simp_attempts"] = context.data.get("simp_attempts", 0) + 1
     if context.data["simp_attempts"] > max_simps:
         return StageResult(

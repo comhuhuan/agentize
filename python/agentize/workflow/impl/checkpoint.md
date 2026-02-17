@@ -16,7 +16,7 @@ class ImplState:
     """Serializable workflow state for checkpointing."""
 
     issue_no: int
-    current_stage: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
+    current_stage: Literal["impl", "review", "simp", "pr", "rebase", "fatal", "done"]
     iteration: int
     worktree: Path
     plan_file: Path | None
@@ -73,7 +73,7 @@ Checkpoints are stored as JSON files with the following structure:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "timestamp": "2025-01-15T10:30:00",
   "state": {
     "issue_no": 42,
@@ -217,11 +217,11 @@ The orchestrator handles stage-specific resumption:
 Valid state transitions in the workflow:
 
 ```
-impl -> review -> pr -> done
- |       |         |
- +-------+         +--> rebase --> impl
- (feedback loop)         |
-                         +--> fatal
+impl -> review -> simp -> pr -> done
+ |       |         |       |
+ +-------+---------+       +--> rebase --> impl
+ (feedback loop)                  |
+                                  +--> fatal
 ```
 
 The history field tracks the actual path taken through this graph.

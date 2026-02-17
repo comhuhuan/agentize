@@ -16,7 +16,7 @@ This design separates concerns:
 - Checkpoint enables recovery from interruptions
 
 The runtime loop is explicit and stage-driven:
-`impl -> review -> pr -> (rebase?) -> finish`, with deterministic `fatal`
+`impl -> review -> simp -> pr -> (rebase?) -> finish`, with deterministic `fatal`
 convergence for retry-limit and invalid-state failures.
 
 ## External Interface
@@ -36,6 +36,7 @@ def run_impl_workflow(
     impl_model: str | None = None,
     review_model: str | None = None,
     enable_review: bool = False,
+    enable_simp: bool = False,
 ) -> None
 ```
 
@@ -53,14 +54,16 @@ and checkpoint recovery.
 - `impl_model`: Model for implementation stage (`provider:model` format).
 - `review_model`: Optional different model for review stage.
 - `enable_review`: Enable the review stage (default: False for compatibility).
+- `enable_simp`: Enable the simplification stage (default: False).
 
 **Workflow Stages**:
 
 1. **Setup**: Resolve/create worktree, sync branch, prefetch issue
 2. **Impl**: Generate implementation using AI
 3. **Review**: Validate implementation quality (feedback loop on failure)
-4. **PR**: Create pull request with explicit pass/fail event split
-5. **Rebase**: Recover from non-fast-forward push/PR conflicts when possible
+4. **Simp**: Evaluate code simplicity (optional, feedback loop on failure)
+5. **PR**: Create pull request with explicit pass/fail event split
+6. **Rebase**: Recover from non-fast-forward push/PR conflicts when possible
 
 **State Machine**:
 
@@ -71,9 +74,11 @@ flowchart LR
     impl -->|parse_fail| impl
     impl -->|max iterations| fatal[fatal]
     impl --> review[review]
-    review -->|passed| pr[pr]
+    review -->|passed| simp[simp]
     review -->|failed| impl
     review -->|4x no improvement| fatal
+    simp -->|simp_pass| pr[pr]
+    simp -->|simp_fail| impl
     pr -->|pr_pass| done[done]
     pr -->|pr_fail_fixable| impl
     pr -->|pr_fail_need_rebase| rebase[rebase]
@@ -108,6 +113,7 @@ flowchart LR
 - Rebase attempts hard-limited to 3.
 - Consecutive parse failures >= 3 force `fatal`.
 - Consecutive non-improving review failures >= 4 force `fatal`.
+- Simplification attempts hard-limited to 3 (global lifetime cap).
 
 **CI Monitoring** (`wait_for_ci=True`):
 After PR creation, monitors mergeability and CI checks:
