@@ -16,7 +16,7 @@ class ImplState:
     """Serializable workflow state for checkpointing."""
 
     issue_no: int
-    current_stage: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
+    current_stage: Literal["impl", "review", "simp", "pr", "rebase", "fatal", "done"]
     iteration: int
     worktree: Path
     plan_file: Path | None
@@ -30,10 +30,11 @@ class ImplState:
 **issue_no**: int
 The GitHub issue number being implemented.
 
-**current_stage**: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
+**current_stage**: Literal["impl", "review", "simp", "pr", "rebase", "fatal", "done"]
 The current workflow stage. One of:
 - `impl`: Implementation generation stage
 - `review`: Quality review stage
+- `simp`: Code simplification evaluation stage
 - `pr`: Pull request creation stage
 - `rebase`: Rebase recovery stage for PR-rejected branches
 - `fatal`: Terminal diagnostic stage for converged failures
@@ -72,7 +73,7 @@ Checkpoints are stored as JSON files with the following structure:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "timestamp": "2025-01-15T10:30:00",
   "state": {
     "issue_no": 42,
@@ -105,7 +106,8 @@ Checkpoints are stored as JSON files with the following structure:
 ### Version Field
 
 The `version` field enables future migration of checkpoint formats:
-- Version 1: Initial format (current)
+- Version 1: Initial format
+- Version 2: Added `"simp"` stage to `current_stage` Literal (current)
 
 When loading, if version mismatch is detected, the loader may attempt
 migration or raise an error.
@@ -215,11 +217,11 @@ The orchestrator handles stage-specific resumption:
 Valid state transitions in the workflow:
 
 ```
-impl -> review -> pr -> done
- |       |         |
- +-------+         +--> rebase --> impl
- (feedback loop)         |
-                         +--> fatal
+impl -> review -> simp -> pr -> done
+ |       |         |       |
+ +-------+---------+       +--> rebase --> impl
+ (feedback loop)                  |
+                                  +--> fatal
 ```
 
 The history field tracks the actual path taken through this graph.

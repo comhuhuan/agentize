@@ -326,6 +326,9 @@ kernel return values and the current state.
   `pr_attempts` (limit 6), emits `EVENT_PR_PASS`/`EVENT_PR_FAIL_*`/`EVENT_FATAL`
 - `rebase_stage_kernel(context)`: Calls `rebase_kernel()`, passes through event,
   tracks `rebase_attempts` (limit 3), emits `EVENT_REBASE_OK`/`EVENT_REBASE_CONFLICT`/`EVENT_FATAL`
+- `simp_stage_kernel(context)`: Handles `enable_simp=False` → `EVENT_SIMP_PASS`,
+  calls `simp_kernel()`, tracks `simp_attempts` (limit 3), emits
+  `EVENT_SIMP_PASS`/`EVENT_SIMP_FAIL`
 - `KERNELS: dict[Stage, Callable[[WorkflowContext], StageResult]]`
 
 Stage kernels extract `ImplState` and dependencies from `context.data` and mutate

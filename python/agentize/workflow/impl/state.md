@@ -10,7 +10,7 @@ implementations.
 
 ## Core Types
 
-- `Stage`: stage literals (`impl`, `review`, `pr`, `rebase`, `finish`, `fatal`)
+- `Stage`: stage literals (`impl`, `review`, `simp`, `pr`, `rebase`, `finish`, `fatal`)
 - `Event`: event literals emitted by stage handlers
 - `StageResult`: structured output from a single stage execution
 - `WorkflowContext`: mutable runtime context shared across stage executions
