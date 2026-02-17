@@ -30,10 +30,11 @@ class ImplState:
 **issue_no**: int
 The GitHub issue number being implemented.
 
-**current_stage**: Literal["impl", "review", "pr", "rebase", "fatal", "done"]
+**current_stage**: Literal["impl", "review", "simp", "pr", "rebase", "fatal", "done"]
 The current workflow stage. One of:
 - `impl`: Implementation generation stage
 - `review`: Quality review stage
+- `simp`: Code simplification evaluation stage
 - `pr`: Pull request creation stage
 - `rebase`: Rebase recovery stage for PR-rejected branches
 - `fatal`: Terminal diagnostic stage for converged failures
@@ -105,7 +106,8 @@ Checkpoints are stored as JSON files with the following structure:
 ### Version Field
 
 The `version` field enables future migration of checkpoint formats:
-- Version 1: Initial format (current)
+- Version 1: Initial format
+- Version 2: Added `"simp"` stage to `current_stage` Literal (current)
 
 When loading, if version mismatch is detected, the loader may attempt
 migration or raise an error.

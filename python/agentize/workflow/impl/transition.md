@@ -28,7 +28,8 @@ removes scattered branch logic and makes routing deterministic.
 The table includes the expected implementation flow:
 
 - `impl -> impl/review/fatal`
-- `review -> pr/impl/fatal`
+- `review -> simp/impl/fatal`
+- `simp -> pr/impl/fatal`
 - `pr -> finish/impl/rebase/fatal`
 - `rebase -> impl/fatal`
 

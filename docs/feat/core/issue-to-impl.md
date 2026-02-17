@@ -13,7 +13,9 @@ graph TD
     F --> G[User starts next session]
     G --> E
     E -->|finish all tests| H[Code reviewer reviews quality]
-    H --> I[Create pull request]
+    H --> H2[Code simplifier checks simplicity]
+    H2 -->|simplification needed| E
+    H2 -->|code is simple enough| I[Create pull request]
     I --> J[User reviews and merges]
 
     style G fill:#ffcccc
