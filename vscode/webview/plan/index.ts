@@ -87,6 +87,18 @@ const getVsCodeApi = (): VsCodeApi => {
     body: HTMLElement;
   };
 
+  type SessionCommandType = 'plan' | 'refine' | 'impl';
+
+  type RefineRunSummary = {
+    id: string;
+    status: string;
+    updatedAt?: number;
+  };
+
+  type RerunSummary = {
+    commandType: SessionCommandType;
+  };
+
   type SessionSummary = {
     id: string;
     status: string;
@@ -98,7 +110,8 @@ const getVsCodeApi = (): VsCodeApi => {
     prUrl?: string;
     implStatus?: string;
     phase?: string;
-    refineRuns?: Array<{ id: string; status: string; updatedAt?: number }>;
+    refineRuns?: RefineRunSummary[];
+    rerun?: RerunSummary;
     widgets?: WidgetState[];
   };
 
@@ -209,6 +222,33 @@ const getVsCodeApi = (): VsCodeApi => {
       }
       resetStopButton(stopButton, !shouldShowStopForTerminal(session, widget));
     }
+  };
+
+  const resolveEffectiveStatus = (session: SessionSummary): string => {
+    const refineRuns = session.refineRuns ?? [];
+    const latestRefineStatus = refineRuns.length > 0 ? refineRuns[refineRuns.length - 1].status : undefined;
+
+    if (session.rerun?.commandType) {
+      if (session.rerun.commandType === 'plan') {
+        return session.status;
+      }
+      if (session.rerun.commandType === 'impl') {
+        return session.implStatus || session.status;
+      }
+      if (session.rerun.commandType === 'refine') {
+        return latestRefineStatus || session.status;
+      }
+    }
+
+    if (session.phase === 'implementing' || session.phase === 'completed') {
+      return session.implStatus || session.status;
+    }
+
+    if (session.phase === 'refining') {
+      return latestRefineStatus || session.status;
+    }
+
+    return session.status;
   };
 
   const showInputPanel = () => {
@@ -591,9 +631,11 @@ const getVsCodeApi = (): VsCodeApi => {
     sessionCache.set(session.id, session);
     const node = ensureSessionNode(session);
 
-    node.container.dataset.status = session.status;
+    const effectiveStatus = resolveEffectiveStatus(session);
+
+    node.container.dataset.status = effectiveStatus;
     node.title.textContent = session.title || 'Untitled';
-    node.status.textContent = session.status;
+    node.status.textContent = effectiveStatus;
 
     node.toggleButton.textContent = session.collapsed ? '[▶]' : '[▼]';
     node.body.classList.toggle('collapsed', Boolean(session.collapsed));
