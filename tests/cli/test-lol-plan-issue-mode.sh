@@ -171,8 +171,8 @@ grep -q '\[plan\] \[#42\] Improved Test Feature' "$GH_CALL_LOG" || {
 
 # ── Test 2: --dry-run skips issue creation ──
 # Reset logs
-> "$GH_CALL_LOG"
-> "$ACW_CALL_LOG"
+: > "$GH_CALL_LOG"
+: > "$ACW_CALL_LOG"
 
 output=$(lol plan --dry-run "Add another test feature" 2>&1) || {
     echo "Pipeline output: $output" >&2
@@ -194,8 +194,8 @@ echo "$output" | grep -q "consensus\|Consensus" || {
 
 # ── Test 3: --refine uses issue-refine prefix and publishes ──
 # Reset logs
-> "$GH_CALL_LOG"
-> "$ACW_CALL_LOG"
+: > "$GH_CALL_LOG"
+: > "$ACW_CALL_LOG"
 
 output=$(lol plan --refine 42 "Tighten scope" 2>&1) || {
     echo "Pipeline output: $output" >&2
@@ -227,8 +227,8 @@ grep -q "gh issue edit" "$GH_CALL_LOG" || {
 
 # ── Test 4: --dry-run --refine skips publish but keeps issue-refine prefix ──
 # Reset logs
-> "$GH_CALL_LOG"
-> "$ACW_CALL_LOG"
+: > "$GH_CALL_LOG"
+: > "$ACW_CALL_LOG"
 
 output=$(lol plan --dry-run --refine 42 "Add error cases" 2>&1) || {
     echo "Pipeline output: $output" >&2
@@ -260,8 +260,8 @@ grep -q "gh issue view" "$GH_CALL_LOG" || {
 
 # ── Test 5: gh failure surfaces as error (default mode) ──
 # Reset logs
-> "$GH_CALL_LOG"
-> "$ACW_CALL_LOG"
+: > "$GH_CALL_LOG"
+: > "$ACW_CALL_LOG"
 
 export GH_STUB_MODE="fail"
 if output=$(lol plan "Add fallback test feature" 2>&1); then

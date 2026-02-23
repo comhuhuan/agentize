@@ -148,7 +148,7 @@ echo "$FOOTER_LINE" | grep -qE "^Plan based on commit ([0-9a-f]+|unknown)$" || {
 }
 
 # ── Test 2: --verbose mode outputs detailed stage info ──
-> "$CALL_LOG"
+: > "$CALL_LOG"
 
 output_verbose=$(
     cd "$TMP_DIR" && \
