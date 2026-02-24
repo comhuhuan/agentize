@@ -14,3 +14,6 @@ vscode/node_modules/
 vscode/out/
 vscode/*.vsix
 vscode/.vscode-test/
+
+agentize-*.agentize-eval.json                          
+logs/run_evaluation/
